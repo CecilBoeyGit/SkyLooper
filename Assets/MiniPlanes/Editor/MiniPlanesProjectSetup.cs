@@ -38,7 +38,7 @@ namespace MiniPlanes.Editor
         static void ConfigurePlayerSettings()
         {
             PlayerSettings.companyName = "MiniPlanes";
-            PlayerSettings.productName = "MiniPlanes";
+            PlayerSettings.productName = "SkyLooper";
             PlayerSettings.colorSpace = ColorSpace.Linear;
             PlayerSettings.defaultInterfaceOrientation = UIOrientation.LandscapeLeft;
 

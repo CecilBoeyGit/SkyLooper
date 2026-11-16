@@ -193,7 +193,7 @@ Rebuilding the scene keeps your level edits. Level assets only reset when
 ## Building
 
 `MiniPlanes > 0. Setup Everything` regenerates settings, scene and references.
-`MiniPlanes > 3. Build Android APK` writes `Builds/MiniPlanes.apk`. Install with `adb install -r`.
+`MiniPlanes > 3. Build Android APK` writes `Builds/SkyLooper.apk`. Install with `adb install -r`.
 
 Headless (run one at a time; the project can only be open once):
 

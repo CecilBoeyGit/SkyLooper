@@ -25,7 +25,7 @@ namespace MiniPlanes.Editor
         [MenuItem("MiniPlanes/3. Build Android APK")]
         public static void BuildAndroid()
         {
-            string output = "Builds/MiniPlanes.apk";
+            string output = "Builds/SkyLooper.apk";
             var options = new BuildPlayerOptions
             {
                 scenes = new[] { MiniPlanesSceneBuilder.ScenePath },
