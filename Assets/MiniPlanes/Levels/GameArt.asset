@@ -71,6 +71,12 @@ MonoBehaviour:
     sprite: {fileID: 21300000, guid: 5a222a9d1f05a1544815ea684d9b3b0c, type: 3}
   - key: missile
     sprite: {fileID: 21300000, guid: ed488e4f32336344c8dc7a903406cb5b, type: 3}
+  - key: island
+    sprite: {fileID: 21300000, guid: 5d2ae40b63b2949449d72967b8a54ce3, type: 3}
+  - key: fuel
+    sprite: {fileID: 21300000, guid: aeb6d52871f3a42b29e624a422b009fd, type: 3}
+  - key: fade
+    sprite: {fileID: 21300000, guid: 88ab9384ea2274100bf9bdff38ffe5d6, type: 3}
   ringOnset: {fileID: 2800000, guid: f3441c03f9761974b91d2f349ddae7e4, type: 3}
   ringPeak: {fileID: 2800000, guid: 1abd689b6dc1afe4e8b1edf6ab388db3, type: 3}
   ringBreakup: {fileID: 2800000, guid: 58596c04523566044a740b12935235c5, type: 3}

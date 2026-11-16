@@ -7,8 +7,9 @@ using UnityEngine.UI;
 namespace MiniPlanes.Editor
 {
     /// <summary>
-    /// Creates the editable UI prefabs in Assets/MiniPlanes/Prefabs/UI: the menu (with Hangar), the cockpit
-    /// HUD, the pause panel, the wrist button, balloon icons, the crosshair and the fuel gauge. A prefab that
+    /// Creates the editable UI prefabs in Assets/MiniPlanes/Prefabs/UI: the menu (with Hangar and Custom
+    /// Paths), the cockpit HUD, the pause panel, the Level Creator panel, the wrist button, balloon icons,
+    /// the crosshair and the fuel gauge. A prefab that
     /// already exists is left exactly as it is, so your edits survive rebuilding the scene. Delete a prefab
     /// to get the generated version back.
     /// </summary>
@@ -29,6 +30,14 @@ namespace MiniPlanes.Editor
         static readonly Color SlateDark = new Color(0.24f, 0.3f, 0.3f, 1f);
         static readonly Color Locked = new Color(0.88f, 0.85f, 0.79f, 1f);
         static readonly Color Gold = new Color(0.86f, 0.6f, 0.12f, 1f);
+        static readonly Color Violet = new Color(0.5f, 0.4f, 0.7f, 1f);
+        static readonly Color VioletDark = new Color(0.36f, 0.28f, 0.54f, 1f);
+        static readonly Color Card = new Color(0.93f, 0.9f, 0.83f, 1f);
+        // The Level Creator's path points, matching LevelEditor's colours: start, middle, finish.
+        static readonly Color PointStart = new Color(0.24f, 0.62f, 0.56f, 1f);
+        static readonly Color PointMid = new Color(0.98f, 0.93f, 0.8f, 1f);
+        static readonly Color PointEnd = new Color(0.9f, 0.42f, 0.32f, 1f);
+        static readonly Color CardLight = new Color(1f, 0.98f, 0.94f, 1f);
         static readonly Color HudPlate = new Color(0.07f, 0.17f, 0.17f, 0.55f);
         static readonly Color HudCream = new Color(0.98f, 0.94f, 0.86f, 1f);
         static readonly Color HudAccent = new Color(0.36f, 0.85f, 0.72f, 1f);
@@ -38,7 +47,7 @@ namespace MiniPlanes.Editor
 
         public class Prefabs
         {
-            public GameObject splash, menu, hud, pause, wrist, shieldIcon, bombIcon, turretIcon, lifeIcon, jamIcon, noTouchIcon, cupIcon, crosshair, dragCursor, fuelGauge;
+            public GameObject splash, menu, hud, pause, creator, wrist, shieldIcon, bombIcon, turretIcon, lifeIcon, jamIcon, noTouchIcon, cupIcon, crosshair, dragCursor, fuelGauge;
         }
 
         public static Prefabs EnsureAll(GameArt art)
@@ -60,7 +69,8 @@ namespace MiniPlanes.Editor
                 {
                     var m = existing.GetComponent<MenuPanel>();
                     return m == null || m.levelRows == null || m.levelRows.Length < Progression.TutorialLevelCount || m.respawnButton == null || m.resultWallet == null
-                        || m.planeRows == null || m.planeRows.Length < 4;
+                        || m.planeRows == null || m.planeRows.Length < 4
+                        || m.customButton == null || m.customPage == null || m.customRowTemplate == null || m.creatorButton == null;
                 }),
                 // Rebuilt once if it predates the plane knob on the progress bar.
                 splash = Ensure("SplashPanel", BuildSplash),
@@ -70,6 +80,11 @@ namespace MiniPlanes.Editor
                     return h == null || h.progressKnob == null || h.finishFlag == null;
                 }),
                 pause = Ensure("PausePanel", BuildPause),
+                creator = Ensure("LevelCreatorPanel", BuildCreator, existing =>
+                {
+                    var c = existing.GetComponent<LevelCreatorPanel>();
+                    return c == null || c.featureRows == null || c.featureRows.Length < CustomFeatures.Count || c.fuelToggle == null || c.pathToggle == null;
+                }),
                 wrist = Ensure("WristMenuButton", BuildWrist),
                 shieldIcon = Ensure("ShieldIcon", () => BuildIcon("ShieldIcon", "ShieldIcon")),
                 bombIcon = Ensure("BombIcon", () => BuildIcon("BombIcon", "BombIcon")),
@@ -163,6 +178,17 @@ namespace MiniPlanes.Editor
             return r;
         }
 
+        /// <summary>A page of a fixed width, centred on the panel, so a layout made for that width stays in the middle.</summary>
+        static RectTransform CentredPage(RectTransform parent, string name, float width)
+        {
+            var r = Page(parent, name);
+            r.anchorMin = new Vector2(0.5f, 0f);
+            r.anchorMax = new Vector2(0.5f, 1f);
+            r.sizeDelta = new Vector2(width, 0f);
+            r.anchoredPosition = Vector2.zero;
+            return r;
+        }
+
         static Image Img(RectTransform parent, string name, Sprite sprite, Color color, Action<RectTransform> layout)
         {
             var go = new GameObject(name, typeof(RectTransform));
@@ -242,6 +268,30 @@ namespace MiniPlanes.Editor
             };
         }
 
+        /// <summary>Places by centre, measured from the parent's top-left corner, in canvas units. Scales from the middle.</summary>
+        static Action<RectTransform> AtCentre(float x, float y, float w, float h)
+        {
+            return r =>
+            {
+                r.anchorMin = r.anchorMax = new Vector2(0f, 1f);
+                r.pivot = new Vector2(0.5f, 0.5f);
+                r.anchoredPosition = new Vector2(x, -y);
+                r.sizeDelta = new Vector2(w, h);
+            };
+        }
+
+        /// <summary>A horizontal bar from x0 to x1 at height y (from the top-left), growing from its left end.</summary>
+        static Action<RectTransform> Bar(float x0, float x1, float y, float thickness)
+        {
+            return r =>
+            {
+                r.anchorMin = r.anchorMax = new Vector2(0f, 1f);
+                r.pivot = new Vector2(0f, 0.5f);
+                r.anchoredPosition = new Vector2(x0, -y);
+                r.sizeDelta = new Vector2(x1 - x0, thickness);
+            };
+        }
+
         static void CoinSlot(RectTransform page, float x, float y, out Text text)
         {
             Img(page, "CoinIcon", MiniPlanesUiSprites.Load("Coin"), Color.white, At(x, y, 46f, 46f));
@@ -250,7 +300,8 @@ namespace MiniPlanes.Editor
 
         // ---------------------------------------------------------------- menu
 
-        const float MenuW = 1000f, MenuH = 660f;
+        // The start and Custom Paths pages use the full width; the others keep a centred 1000-wide layout.
+        const float MenuW = 1320f, MenuH = 660f, PageW = 1000f;
 
         static GameObject BuildMenu()
         {
@@ -268,6 +319,7 @@ namespace MiniPlanes.Editor
             BuildIntroPage(menu, canvas);
             BuildResultPage(menu, canvas);
             BuildHangarPage(menu, canvas, follow.transform);
+            BuildCustomPage(menu, canvas);
             AddCursors(canvas, poke);
             return root;
         }
@@ -277,7 +329,7 @@ namespace MiniPlanes.Editor
             var page = Page(canvas, "StartPage");
             menu.startPage = page.gameObject;
             Txt(page, "Title", "MINIPLANES", 60, _heading, Ink, TextAnchor.MiddleCenter, At(0f, 18f, MenuW, 84f));
-            CoinSlot(page, 830f, 32f, out menu.startCoins);
+            CoinSlot(page, MenuW - 170f, 32f, out menu.startCoins);
 
             Txt(page, "TutorialHead", "TUTORIAL", 28, _heading, Muted, TextAnchor.MiddleLeft, At(40f, 108f, 300f, 40f));
             var viewport = Img(page, "LevelList", null, new Color(1f, 1f, 1f, 0.01f), At(40f, 152f, 520f, 470f));
@@ -344,22 +396,128 @@ namespace MiniPlanes.Editor
             area.thumb = thumb.rectTransform;
 
             Txt(page, "InfiniteHead", "INFINITE", 28, _heading, Muted, TextAnchor.MiddleLeft, At(612f, 108f, 300f, 40f));
-            menu.infiniteButton = Btn(page, "infinite", "PLAY", 46, Teal, TealDark, At(612f, 152f, 348f, 160f), out menu.infiniteLabel);
-            menu.infiniteBest = Txt(page, "Best", "BEST  0", 30, _font, Ink, TextAnchor.MiddleLeft, At(612f, 318f, 348f, 44f));
-            menu.infiniteLock = Txt(page, "Lock", "", 22, _font, Muted, TextAnchor.UpperLeft, At(612f, 362f, 348f, 64f));
+            menu.infiniteButton = Btn(page, "infinite", "PLAY", 46, Teal, TealDark, At(612f, 152f, 320f, 160f), out menu.infiniteLabel);
+            menu.infiniteBest = Txt(page, "Best", "BEST  0", 30, _font, Ink, TextAnchor.MiddleLeft, At(612f, 318f, 320f, 44f));
+            menu.infiniteLock = Txt(page, "Lock", "", 22, _font, Muted, TextAnchor.UpperLeft, At(612f, 362f, 320f, 64f));
 
             Txt(page, "HangarHead", "HANGAR", 28, _heading, Muted, TextAnchor.MiddleLeft, At(612f, 446f, 300f, 40f));
-            menu.hangarButton = Btn(page, "hangar", "PLANES", 40, Coral, CoralDark, At(612f, 490f, 348f, 132f), out _);
+            menu.hangarButton = Btn(page, "hangar", "PLANES", 40, Coral, CoralDark, At(612f, 490f, 320f, 132f), out _);
+
+            // Custom Paths, to the right of Infinite: the player's own levels and the Level Creator.
+            const float cx = 964f, cw = 316f;
+            Txt(page, "CustomHead", "CUSTOM PATHS", 28, _heading, Muted, TextAnchor.MiddleLeft, At(cx, 108f, cw, 40f));
+            menu.customButton = Btn(page, "custom", "", 1, Violet, VioletDark, At(cx, 152f, cw, 160f), out _);
+            Img(menu.customButton.Rect, "Icon", MiniPlanesUiSprites.Load("CreatorIcon"), Color.white, r =>
+            {
+                r.anchorMin = r.anchorMax = new Vector2(0f, 0.5f);
+                r.pivot = new Vector2(0f, 0.5f);
+                r.anchoredPosition = new Vector2(22f, 0f);
+                r.sizeDelta = new Vector2(112f, 112f);
+            });
+            Txt(menu.customButton.Rect, "Label", "OPEN", 44, _heading, Color.white, TextAnchor.MiddleCenter, r =>
+            {
+                Stretch(r);
+                r.offsetMin = new Vector2(134f, 0f);
+            });
+            menu.customInfo = Txt(page, "CustomInfo", "No levels made yet.", 26, _font, Ink, TextAnchor.MiddleLeft, At(cx, 318f, cw, 44f));
+            Txt(page, "CustomBlurb", "Pinch out a path, add enemies and powerups, then fly it.", 22, _font, Muted, TextAnchor.UpperLeft, At(cx, 362f, cw, 64f));
+            Img(page, "CustomArt", MiniPlanesUiSprites.Load("CreatorIcon"), Color.white, AtCentre(cx + cw * 0.5f, 540f, 150f, 150f));
+        }
+
+        static void BuildCustomPage(MenuPanel menu, RectTransform canvas)
+        {
+            var page = Page(canvas, "CustomPage");
+            menu.customPage = page.gameObject;
+            Btn(page, "custom_back", "BACK", 30, Slate, SlateDark, At(30f, 26f, 160f, 68f), out _);
+            Txt(page, "Title", "CUSTOM PATHS", 50, _heading, Ink, TextAnchor.MiddleCenter, At(0f, 20f, MenuW, 76f));
+
+            // Left: the saved levels. A hidden template row is copied for each one.
+            Txt(page, "LevelsHead", "YOUR LEVELS", 28, _heading, Muted, TextAnchor.MiddleLeft, At(40f, 108f, 400f, 40f));
+            var viewport = Img(page, "CustomList", null, new Color(1f, 1f, 1f, 0.01f), At(40f, 152f, 720f, 470f));
+            viewport.gameObject.AddComponent<RectMask2D>();
+            var area = viewport.gameObject.AddComponent<PokeScrollArea>();
+            var content = new GameObject("Content", typeof(RectTransform));
+            var contentRect = (RectTransform)content.transform;
+            contentRect.SetParent(viewport.rectTransform, false);
+            contentRect.anchorMin = new Vector2(0f, 1f);
+            contentRect.anchorMax = new Vector2(1f, 1f);
+            contentRect.pivot = new Vector2(0.5f, 1f);
+            contentRect.sizeDelta = new Vector2(0f, 0f);
+            area.content = contentRect;
+            menu.customList = area;
+            menu.customRowGap = 10f;
+
+            var rowGo = new GameObject("CustomRowTemplate", typeof(RectTransform));
+            var row = (RectTransform)rowGo.transform;
+            row.SetParent(contentRect, false);
+            row.anchorMin = new Vector2(0f, 1f);
+            row.anchorMax = new Vector2(1f, 1f);
+            row.pivot = new Vector2(0.5f, 1f);
+            row.anchoredPosition = Vector2.zero;
+            row.sizeDelta = new Vector2(0f, 112f);
+            var rowView = rowGo.AddComponent<CustomLevelRow>();
+            rowView.play = Btn(row, "cplay", "", 1, Seafoam, Teal, r =>
+            {
+                Stretch(r);
+                r.offsetMax = new Vector2(-150f, 0f);
+            }, out _);
+            rowView.levelName = Txt(rowView.play.Rect, "Name", "Path 1", 34, _heading, Ink, TextAnchor.MiddleLeft, r =>
+            {
+                Stretch(r);
+                r.offsetMin = new Vector2(24f, 52f);
+                r.offsetMax = new Vector2(-14f, -8f);
+            });
+            rowView.detail = Txt(rowView.play.Rect, "Detail", "", 22, _font, Ink, TextAnchor.MiddleLeft, r =>
+            {
+                Stretch(r);
+                r.offsetMin = new Vector2(24f, 8f);
+                r.offsetMax = new Vector2(-14f, -62f);
+            });
+            rowView.detail.horizontalOverflow = HorizontalWrapMode.Overflow;
+            rowView.detailIcons = rowView.detail.gameObject.AddComponent<InlineIcons>();
+            rowView.detailIcons.iconScale = 1.45f;
+            rowView.edit = Btn(row, "cedit", "EDIT", 32, Coral, CoralDark, r =>
+            {
+                r.anchorMin = new Vector2(1f, 0f);
+                r.anchorMax = new Vector2(1f, 1f);
+                r.pivot = new Vector2(1f, 0.5f);
+                r.anchoredPosition = Vector2.zero;
+                r.sizeDelta = new Vector2(136f, 0f);
+            }, out _);
+            rowGo.SetActive(false);
+            menu.customRowTemplate = rowView;
+
+            var track = Img(page, "ScrollTrack", _rounded, new Color(0.82f, 0.79f, 0.73f, 1f), At(772f, 152f, 12f, 470f));
+            var thumb = Img(track.rectTransform, "ScrollThumb", _rounded, Teal, r =>
+            {
+                r.anchorMin = new Vector2(0f, 1f);
+                r.anchorMax = new Vector2(1f, 1f);
+                r.pivot = new Vector2(0.5f, 1f);
+                r.sizeDelta = new Vector2(0f, 200f);
+            });
+            area.track = track.rectTransform;
+            area.thumb = thumb.rectTransform;
+            menu.customEmpty = Txt(page, "Empty", "No custom paths yet.\nOpen the Level Creator to make one.", 28, _font, Muted, TextAnchor.MiddleCenter,
+                At(60f, 300f, 680f, 120f));
+
+            // Right: the Level Creator.
+            const float rx = 820f, rw = 460f;
+            Txt(page, "CreatorHead", "LEVEL CREATOR", 28, _heading, Muted, TextAnchor.MiddleLeft, At(rx, 108f, rw, 40f));
+            var card = Img(page, "CreatorCard", _rounded, Card, At(rx, 152f, rw, 300f));
+            Img(card.rectTransform, "Art", MiniPlanesUiSprites.Load("CreatorIcon"), Color.white, AtCentre(rw * 0.5f, 92f, 150f, 150f));
+            Txt(card.rectTransform, "Blurb", "Pinch a flight path into the air, choose its enemies, powerups and islands, then fly it.",
+                22, _font, Ink, TextAnchor.UpperCenter, At(24f, 180f, rw - 48f, 104f));
+            menu.creatorButton = Btn(page, "creator_new", "NEW LEVEL", 44, Teal, TealDark, At(rx, 476f, rw, 146f), out _);
         }
 
         static void BuildIntroPage(MenuPanel menu, RectTransform canvas)
         {
-            var page = Page(canvas, "IntroPage");
+            var page = CentredPage(canvas, "IntroPage", PageW);
             menu.introPage = page.gameObject;
             menu.introBack = Btn(page, "back", "BACK", 30, Slate, SlateDark, At(36f, 30f, 170f, 70f), out _);
-            menu.introNumber = Txt(page, "Number", "LEVEL 1", 32, _heading, Muted, TextAnchor.MiddleCenter, At(0f, 40f, MenuW, 50f));
-            menu.introTitle = Txt(page, "Title", "First Flight", 64, _heading, Ink, TextAnchor.MiddleCenter, At(0f, 92f, MenuW, 90f));
-            menu.introCaption = Txt(page, "Caption", "", 30, _font, Muted, TextAnchor.UpperCenter, At(70f, 196f, MenuW - 140f, 140f));
+            menu.introNumber = Txt(page, "Number", "LEVEL 1", 32, _heading, Muted, TextAnchor.MiddleCenter, At(0f, 40f, PageW, 50f));
+            menu.introTitle = Txt(page, "Title", "First Flight", 64, _heading, Ink, TextAnchor.MiddleCenter, At(0f, 92f, PageW, 90f));
+            menu.introCaption = Txt(page, "Caption", "", 30, _font, Muted, TextAnchor.UpperCenter, At(70f, 196f, PageW - 140f, 140f));
             Txt(page, "LivesLabel", "LIVES", 26, _heading, Muted, TextAnchor.MiddleRight, At(300f, 352f, 150f, 56f));
             var hearts = new List<Image>();
             for (int i = 0; i < 5; i++)
@@ -370,12 +528,12 @@ namespace MiniPlanes.Editor
 
         static void BuildResultPage(MenuPanel menu, RectTransform canvas)
         {
-            var page = Page(canvas, "ResultPage");
+            var page = CentredPage(canvas, "ResultPage", PageW);
             menu.resultPage = page.gameObject;
-            menu.resultTitle = Txt(page, "Title", "LEVEL PASSED", 66, _heading, Ink, TextAnchor.MiddleCenter, At(0f, 44f, MenuW, 100f));
-            menu.resultDetail = Txt(page, "Detail", "", 30, _font, Muted, TextAnchor.MiddleCenter, At(60f, 150f, MenuW - 120f, 110f));
-            menu.resultScore = Txt(page, "Score", "SCORE  0", 52, _heading, Ink, TextAnchor.MiddleCenter, At(0f, 266f, MenuW, 80f));
-            menu.resultCoins = Txt(page, "Coins", "", 34, _heading, Gold, TextAnchor.MiddleCenter, At(0f, 346f, MenuW, 56f));
+            menu.resultTitle = Txt(page, "Title", "LEVEL PASSED", 66, _heading, Ink, TextAnchor.MiddleCenter, At(0f, 44f, PageW, 100f));
+            menu.resultDetail = Txt(page, "Detail", "", 30, _font, Muted, TextAnchor.MiddleCenter, At(60f, 150f, PageW - 120f, 110f));
+            menu.resultScore = Txt(page, "Score", "SCORE  0", 52, _heading, Ink, TextAnchor.MiddleCenter, At(0f, 266f, PageW, 80f));
+            menu.resultCoins = Txt(page, "Coins", "", 34, _heading, Gold, TextAnchor.MiddleCenter, At(0f, 346f, PageW, 56f));
             CoinSlot(page, 830f, 32f, out menu.resultWallet);
             menu.nextButton = Btn(page, "next", "NEXT", 36, Teal, TealDark, At(44f, 448f, 276f, 150f), out menu.nextLabel);
             // Shares the Next slot: only Infinite's game-over page shows it.
@@ -387,10 +545,10 @@ namespace MiniPlanes.Editor
 
         static void BuildHangarPage(MenuPanel menu, RectTransform canvas, Transform follow)
         {
-            var page = Page(canvas, "HangarPage");
+            var page = CentredPage(canvas, "HangarPage", PageW);
             menu.hangarPage = page.gameObject;
             Btn(page, "hangar_back", "BACK", 30, Slate, SlateDark, At(30f, 26f, 160f, 68f), out _);
-            Txt(page, "Title", "HANGAR", 50, _heading, Ink, TextAnchor.MiddleCenter, At(0f, 20f, MenuW, 76f));
+            Txt(page, "Title", "HANGAR", 50, _heading, Ink, TextAnchor.MiddleCenter, At(0f, 20f, PageW, 76f));
             CoinSlot(page, 830f, 32f, out menu.hangarCoins);
 
             var rows = new List<MenuPanel.PlaneRow>();
@@ -444,6 +602,146 @@ namespace MiniPlanes.Editor
             anchor.localPosition = new Vector3(0f, -0.07f + stageCentre * CanvasScale, 0.46f - 0.07f);
             anchor.localRotation = Quaternion.Euler(-15f, 200f, 0f);
             menu.previewAnchor = anchor;
+        }
+
+        // ---------------------------------------------------------------- level creator
+
+        const float CreatorW = 1240f, CreatorH = 846f;
+
+        /// <summary>
+        /// The Level Creator's panel: low in front of the player and tilted up to face them, leaving the space
+        /// above it free for pinching the path. Left, the mini tutorial; right, the feature counts, the rules
+        /// (fuel and the fly path) and the Complete Level and Cancel buttons.
+        /// </summary>
+        static GameObject BuildCreator()
+        {
+            var root = new GameObject("LevelCreatorPanel");
+            var panel = root.AddComponent<LevelCreatorPanel>();
+            var canvas = CurvedPanel(root, "Canvas", 0.46f, -0.35f, new Vector2(CreatorW, CreatorH), 12, out var follow, out var poke);
+            canvas.localRotation = Quaternion.Euler(28f, 0f, 0f);
+            follow.deadzoneDeg = 26f;
+            follow.followSpeed = 1.6f;
+            follow.pitchFollow = 0f;
+            panel.follow = follow;
+            panel.poke = poke;
+
+            Img(canvas, "Paper", _rounded, Paper, Stretch);
+            panel.title = Txt(canvas, "Title", "LEVEL CREATOR", 40, _heading, Ink, TextAnchor.MiddleCenter, At(0f, 14f, CreatorW, 64f));
+            BuildCreatorTutorial(root, canvas);
+            BuildCreatorFeatures(panel, canvas);
+            BuildCreatorRules(panel, canvas);
+
+            const float bottom = 706f;
+            panel.pathInfo = Txt(canvas, "PathInfo", "NO POINTS YET", 26, _heading, Ink, TextAnchor.MiddleLeft, At(512f, bottom - 4f, 330f, 36f));
+            panel.hint = Txt(canvas, "Hint", "Pinch the air with your right hand to start a path.", 20, _font, Muted, TextAnchor.UpperLeft, At(512f, bottom + 34f, 330f, 80f));
+            panel.cancelButton = Btn(canvas, "cancel", "CANCEL", 28, Slate, SlateDark, At(852f, bottom, 150f, 110f), out _);
+            panel.completeButton = Btn(canvas, "complete", "COMPLETE\nLEVEL", 30, Teal, TealDark, At(1014f, bottom, 202f, 110f), out panel.completeLabel);
+            AddCursors(canvas, poke);
+            return root;
+        }
+
+        static void BuildCreatorTutorial(GameObject root, RectTransform canvas)
+        {
+            var section = Img(canvas, "Tutorial", _rounded, Card, At(24f, 88f, 470f, 728f)).rectTransform;
+            const float cardH = 278f, dy = 29f;   // card height, and how far its contents sit below the old 220-tall layout
+            Txt(section, "Head", "HOW TO DRAW", 26, _heading, Muted, TextAnchor.MiddleCenter, At(0f, 12f, 470f, 40f));
+            var motion = root.AddComponent<CreatorTutorialMotion>();
+            var dot = MiniPlanesUiSprites.Load("Circle");
+            var ring = MiniPlanesUiSprites.Load("Ring");
+            var hand = MiniPlanesUiSprites.Load("PinchHand");
+            Color line = new Color(0.36f, 0.72f, 0.62f, 1f);
+            Color red = new Color(0.9f, 0.16f, 0.14f, 1f);
+
+            Image Dot(RectTransform parent, string name, float x, Color color)
+            {
+                var d = Img(parent, name, dot, color, AtCentre(x, 158f + dy, 28f, 28f));
+                Img(d.rectTransform, "Rim", ring, new Color(Ink.r, Ink.g, Ink.b, 0.6f), Stretch);
+                return d;
+            }
+
+            // Right pinch adds a point to the end of the path.
+            var add = Img(section, "AddCard", _rounded, CardLight, At(16f, 62f, 438f, cardH)).rectTransform;
+            motion.addHand = Img(add, "Hand", hand, Color.white, AtCentre(86f, 110f + dy, 136f, 136f)).rectTransform;
+            Txt(add, "Head", "RIGHT PINCH", 30, _heading, TealDark, TextAnchor.MiddleLeft, At(170f, 22f + dy, 260f, 40f));
+            Txt(add, "Text", "adds a path point", 24, _font, Ink, TextAnchor.UpperLeft, At(170f, 64f + dy, 260f, 60f));
+            Img(add, "Link", _white, line, Bar(196f, 266f, 158f + dy, 6f));
+            motion.addLink = Img(add, "NewLink", _white, line, Bar(266f, 346f, 158f + dy, 6f)).rectTransform;
+            Dot(add, "Dot0", 196f, PointStart);
+            Dot(add, "Dot1", 266f, PointMid);
+            motion.addDot = Dot(add, "NewDot", 346f, PointEnd).rectTransform;
+
+            // Left pinch on a point deletes it.
+            var del = Img(section, "DeleteCard", _rounded, CardLight, At(16f, 358f, 438f, cardH)).rectTransform;
+            var leftHand = Img(del, "Hand", hand, Color.white, AtCentre(86f, 110f + dy, 136f, 136f)).rectTransform;
+            leftHand.localScale = new Vector3(-1f, 1f, 1f);
+            motion.deleteHand = leftHand;
+            Txt(del, "Head", "LEFT PINCH", 30, _heading, CoralDark, TextAnchor.MiddleLeft, At(170f, 22f + dy, 260f, 40f));
+            Txt(del, "Text", "on a point deletes it", 24, _font, Ink, TextAnchor.UpperLeft, At(170f, 64f + dy, 260f, 60f));
+            Img(del, "Link", _white, line, Bar(196f, 346f, 158f + dy, 6f));
+            Dot(del, "Dot0", 196f, PointStart);
+            motion.deleteDot = Dot(del, "Doomed", 271f, PointMid);
+            Dot(del, "Dot2", 346f, PointEnd);
+            var cross = new GameObject("Cross", typeof(RectTransform));
+            var crossRect = (RectTransform)cross.transform;
+            crossRect.SetParent(del, false);
+            AtCentre(271f, 158f + dy, 44f, 44f)(crossRect);
+            for (int i = 0; i < 2; i++)
+            {
+                var bar = Img(crossRect, "Bar" + i, _white, red, Centre(0f, 0f, 50f, 8f));
+                bar.rectTransform.localRotation = Quaternion.Euler(0f, 0f, i == 0 ? 45f : -45f);
+            }
+            motion.deleteCross = crossRect;
+            motion.dotColor = PointMid;
+            motion.doomedColor = red;
+
+            // What the colours mean.
+            var key = Img(section, "Key", _rounded, CardLight, At(16f, 654f, 438f, 56f)).rectTransform;
+            Img(key, "Start", dot, PointStart, AtCentre(30f, 28f, 22f, 22f));
+            Txt(key, "StartText", "START", 20, _heading, Ink, TextAnchor.MiddleLeft, At(48f, 10f, 90f, 36f));
+            Img(key, "End", dot, PointEnd, AtCentre(142f, 28f, 22f, 22f));
+            Txt(key, "EndText", "FINISH", 20, _heading, Ink, TextAnchor.MiddleLeft, At(160f, 10f, 100f, 36f));
+            Txt(key, "Order", "Joined in order", 19, _font, Muted, TextAnchor.MiddleLeft, At(274f, 10f, 156f, 36f));
+        }
+
+        static void BuildCreatorFeatures(LevelCreatorPanel panel, RectTransform canvas)
+        {
+            var section = Img(canvas, "Features", _rounded, Card, At(512f, 88f, 704f, 470f)).rectTransform;
+            Txt(section, "Head", "LEVEL FEATURES", 26, _heading, Muted, TextAnchor.MiddleCenter, At(0f, 12f, 704f, 40f));
+            string[] icons = { "FighterIcon", "BomberIcon", "ShieldIcon", "TurretIcon", "LifeIcon", "TubeIcon", "IslandIcon" };
+            var rows = new List<LevelCreatorPanel.FeatureRow>();
+            const float rowH = 54f, gap = 4f, top = 56f;
+            for (int i = 0; i < CustomFeatures.Count; i++)
+            {
+                var f = (CustomFeature)i;
+                float y = top + i * (rowH + gap);
+                var row = new LevelCreatorPanel.FeatureRow { feature = f };
+                if (i % 2 == 0) Img(section, "Stripe" + i, _white, new Color(1f, 1f, 1f, 0.35f), At(10f, y - 2f, 684f, rowH + 4f));
+                row.icon = Img(section, "Icon" + i, MiniPlanesUiSprites.Load(icons[i]), Color.white, At(20f, y + 2f, 50f, 50f));
+                row.name = Txt(section, "Name" + i, CustomFeatures.Name(f), 26, _font, Ink, TextAnchor.MiddleLeft, At(84f, y, 330f, rowH));
+                row.minus = Btn(section, "feat_minus" + i, "-", 38, Slate, SlateDark, At(424f, y + 2f, 78f, rowH - 4f), out _);
+                row.count = Txt(section, "Count" + i, "0", 32, _heading, Muted, TextAnchor.MiddleCenter, At(506f, y, 90f, rowH));
+                row.plus = Btn(section, "feat_plus" + i, "+", 38, Teal, TealDark, At(600f, y + 2f, 78f, rowH - 4f), out _);
+                rows.Add(row);
+            }
+            panel.featureRows = rows.ToArray();
+        }
+
+        /// <summary>The level's rules under the features: a switch for fuel and one for the fly path being always on.</summary>
+        static void BuildCreatorRules(LevelCreatorPanel panel, RectTransform canvas)
+        {
+            var section = Img(canvas, "Rules", _rounded, Card, At(512f, 570f, 704f, 122f)).rectTransform;
+
+            PokeButton Rule(string id, string sprite, string head, float x, out Text state, out Text detail)
+            {
+                var card = Img(section, "Rule_" + id, _rounded, CardLight, At(x, 8f, 340f, 106f)).rectTransform;
+                Img(card, "Icon", MiniPlanesUiSprites.Load(sprite), Color.white, At(8f, 19f, 68f, 68f));
+                Txt(card, "Head", head, 26, _heading, Ink, TextAnchor.MiddleLeft, At(84f, 6f, 168f, 36f));
+                detail = Txt(card, "Detail", "", 19, _font, Ink, TextAnchor.UpperLeft, At(84f, 42f, 168f, 60f));
+                return Btn(card, id, "ON", 28, Teal, TealDark, At(256f, 16f, 76f, 74f), out state);
+            }
+
+            panel.fuelToggle = Rule("toggle_fuel", "FuelIcon", "FUEL", 8f, out panel.fuelState, out panel.fuelDetail);
+            panel.pathToggle = Rule("toggle_path", "PathFadeIcon", "FLY PATH", 356f, out panel.pathState, out panel.pathDetail);
         }
 
         // ---------------------------------------------------------------- HUD

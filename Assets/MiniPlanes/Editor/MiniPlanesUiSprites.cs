@@ -175,6 +175,49 @@ namespace MiniPlanes.Editor
                 L(p => RoundedBox(p, new Vector2(0.12f, 0f), new Vector2(0.03f, 0.13f), 0f), Coral, 0f)
             }));
 
+            // The Level Creator: a pinching hand for its tutorial, the island feature, and the creator's badge.
+            Icon("PinchHand", 256, Badge(new Color(0.84f, 0.94f, 0.9f), new[]
+            {
+                L(PinchHand, new Color(0.93f, 0.64f, 0.48f), 0.045f),
+                L(p => Star(p, new Vector2(0.66f, 0.36f), 0.17f, 0.07f, 4), new Color(1f, 0.82f, 0.3f), 0.03f)
+            }));
+            Icon("IslandIcon", 256, Badge(new Color(0.82f, 0.93f, 0.85f), new[]
+            {
+                L(p => Polygon(p, IslandRock), new Color(0.6f, 0.46f, 0.36f), 0.045f),
+                L(p => Ellipse(p, new Vector2(0f, 0.04f), new Vector2(0.62f, 0.17f)), new Color(0.46f, 0.74f, 0.4f), 0.045f),
+                L(p => Segment(p, new Vector2(0.24f, 0.12f), new Vector2(0.24f, 0.4f), 0.045f), new Color(0.5f, 0.36f, 0.28f), 0.03f),
+                L(p => Circle(p, new Vector2(0.24f, 0.5f), 0.17f), new Color(0.3f, 0.6f, 0.34f), 0.04f)
+            }));
+            Icon("CreatorIcon", 256, Badge(new Color(0.88f, 0.84f, 0.96f), new[]
+            {
+                L(p => Mathf.Min(Mathf.Min(Segment(p, CreatorPath[0], CreatorPath[1], 0.04f), Segment(p, CreatorPath[1], CreatorPath[2], 0.04f)),
+                    Segment(p, CreatorPath[2], CreatorPath[3], 0.04f)), new Color(0.42f, 0.34f, 0.6f), 0f),
+                L(p => Circle(p, CreatorPath[0], 0.11f), Teal, 0.04f),
+                L(p => Mathf.Min(Circle(p, CreatorPath[1], 0.09f), Circle(p, CreatorPath[2], 0.09f)), Cream, 0.04f),
+                L(p => Circle(p, CreatorPath[3], 0.11f), Coral, 0.04f),
+                L(p => Circle(p, new Vector2(0.46f, -0.44f), 0.19f), new Color(1f, 0.78f, 0.24f), 0.04f),
+                L(p => Mathf.Min(Segment(p, new Vector2(0.36f, -0.44f), new Vector2(0.56f, -0.44f), 0.035f),
+                    Segment(p, new Vector2(0.46f, -0.54f), new Vector2(0.46f, -0.34f), 0.035f)), Color.white, 0f)
+            }));
+
+            // The Level Creator's rules: a fuel can, and a fly path that fades out after the start.
+            Icon("FuelIcon", 256, Badge(new Color(1f, 0.86f, 0.74f), new[]
+            {
+                L(p => Segment(p, new Vector2(0.18f, 0.4f), new Vector2(0.4f, 0.64f), 0.075f), new Color(0.55f, 0.5f, 0.46f), 0.035f),
+                L(p => Mathf.Max(RoundedBox(p, new Vector2(-0.06f, -0.08f), new Vector2(0.36f, 0.5f), 0.12f),
+                    -RoundedBox(p, new Vector2(-0.16f, 0.3f), new Vector2(0.12f, 0.06f), 0.05f)), DarkCoral, 0.045f),
+                L(p => Mathf.Min(Segment(p, new Vector2(-0.24f, -0.34f), new Vector2(0.12f, 0.08f), 0.045f),
+                    Segment(p, new Vector2(-0.24f, 0.08f), new Vector2(0.12f, -0.34f), 0.045f)), new Color(1f, 0.72f, 0.6f), 0f)
+            }));
+            Icon("PathFadeIcon", 256, Badge(new Color(0.84f, 0.92f, 0.94f), new[]
+            {
+                L(p => Mathf.Min(Segment(p, PathFade[0], PathFade[1], 0.05f), Segment(p, PathFade[1], PathFade[2], 0.05f)), Teal, 0f),
+                L(p => Segment(p, PathFade[3], PathFade[4], 0.045f), new Color(0.43f, 0.7f, 0.66f), 0f),
+                L(p => Segment(p, PathFade[5], PathFade[6], 0.04f), new Color(0.6f, 0.78f, 0.78f), 0f),
+                L(p => Circle(p, PathFade[7], 0.035f), new Color(0.7f, 0.84f, 0.85f), 0f),
+                L(p => Circle(p, PathFade[0], 0.12f), Teal, 0.04f)
+            }));
+
             Write("Crosshair", 128, p =>
             {
                 float ring = Mathf.Abs(Circle(p, Vector2.zero, 0.72f)) - 0.05f;
@@ -223,6 +266,43 @@ namespace MiniPlanes.Editor
             float angle = Mathf.Atan2(Mathf.Abs(d.x), d.y);
             float wedge = (angle - 0.785f) * d.magnitude;
             return Mathf.Max(ring, wedge);
+        }
+
+        static readonly Vector2[] IslandRock =
+        {
+            new Vector2(-0.58f, 0.06f), new Vector2(0.58f, 0.06f), new Vector2(0.2f, -0.36f), new Vector2(0.02f, -0.66f), new Vector2(-0.22f, -0.34f)
+        };
+
+        static readonly Vector2[] CreatorPath =
+        {
+            new Vector2(-0.6f, -0.28f), new Vector2(-0.22f, 0.3f), new Vector2(0.14f, -0.12f), new Vector2(0.5f, 0.38f)
+        };
+
+        // A solid start, then shorter and paler dashes, then a last faint dot.
+        static readonly Vector2[] PathFade =
+        {
+            new Vector2(-0.6f, -0.3f), new Vector2(-0.38f, 0.06f), new Vector2(-0.16f, 0.2f),
+            new Vector2(0.02f, 0.18f), new Vector2(0.18f, 0.06f),
+            new Vector2(0.32f, -0.04f), new Vector2(0.42f, -0.06f),
+            new Vector2(0.58f, -0.02f)
+        };
+
+        /// <summary>A right hand seen from the thumb side, index finger and thumb pinched together at the front.</summary>
+        static float PinchHand(Vector2 p)
+        {
+            float d = RoundedBox(p, new Vector2(-0.2f, -0.16f), new Vector2(0.3f, 0.27f), 0.15f);
+            d = Mathf.Min(d, Segment(p, new Vector2(-0.42f, -0.36f), new Vector2(-0.74f, -0.72f), 0.16f));
+            // Middle, ring and little fingers curled under.
+            d = Mathf.Min(d, Segment(p, new Vector2(0.04f, -0.06f), new Vector2(0.2f, -0.24f), 0.085f));
+            d = Mathf.Min(d, Segment(p, new Vector2(-0.02f, -0.22f), new Vector2(0.13f, -0.38f), 0.08f));
+            d = Mathf.Min(d, Segment(p, new Vector2(-0.1f, -0.36f), new Vector2(0.03f, -0.48f), 0.075f));
+            // The index finger arches up and over, down to the thumb.
+            d = Mathf.Min(d, Segment(p, new Vector2(0.02f, 0.1f), new Vector2(0.3f, 0.4f), 0.08f));
+            d = Mathf.Min(d, Segment(p, new Vector2(0.3f, 0.4f), new Vector2(0.48f, 0.2f), 0.07f));
+            // The thumb reaches forward to meet it.
+            d = Mathf.Min(d, Segment(p, new Vector2(-0.08f, -0.02f), new Vector2(0.26f, 0.06f), 0.085f));
+            d = Mathf.Min(d, Segment(p, new Vector2(0.26f, 0.06f), new Vector2(0.46f, 0.15f), 0.07f));
+            return d;
         }
 
         /// <summary>An open hand, fingers up, palm toward the viewer.</summary>

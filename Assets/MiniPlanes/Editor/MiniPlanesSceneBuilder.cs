@@ -99,7 +99,8 @@ namespace MiniPlanes.Editor
             {
                 CaptionIcon("shield", "ShieldIcon"), CaptionIcon("turret", "TurretIcon"), CaptionIcon("life", "LifeIcon"), CaptionIcon("bomb", "BombIcon"),
                 CaptionIcon("tube", "TubeIcon"), CaptionIcon("fighter", "FighterIcon"), CaptionIcon("bomber", "BomberIcon"),
-                CaptionIcon("zeppelin", "ZeppelinIcon"), CaptionIcon("missile", "MissileIcon")
+                CaptionIcon("zeppelin", "ZeppelinIcon"), CaptionIcon("missile", "MissileIcon"), CaptionIcon("island", "IslandIcon"),
+                CaptionIcon("fuel", "FuelIcon"), CaptionIcon("fade", "PathFadeIcon")
             };
             EditorUtility.SetDirty(art);
 
@@ -123,6 +124,11 @@ namespace MiniPlanes.Editor
             pause.SetHands(handSources);
             Dirty(pause);
 
+            var creator = Place<LevelCreatorPanel>(ui.creator);
+            creator.SetHead(head);
+            creator.SetHands(handSources);
+            Dirty(creator);
+
             var wrist = Place<WristMenuButton>(ui.wrist);
             wrist.game = gm;
             wrist.head = head;
@@ -132,6 +138,7 @@ namespace MiniPlanes.Editor
             gm.catalog = catalog;
             gm.sounds = sounds;
             gm.pausePanel = pause;
+            gm.creator = creator;
             gm.splash = splash;
             gm.wristMenu = wrist;
             gm.head = head;
