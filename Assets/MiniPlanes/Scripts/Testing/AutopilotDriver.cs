@@ -115,6 +115,7 @@ namespace MiniPlanes
             yield return TryStep(InfiniteMode());
             yield return TryStep(InfiniteRespawn());
             yield return TryStep(ZeppelinBoss());
+            yield return TryStep(LastLevelResult());
             yield return TryStep(Sounds());
             Finish();
         }
@@ -897,6 +898,27 @@ namespace MiniPlanes
             yield return null;
         }
 
+        /// <summary>
+        /// A real finger's poke: it slides up the panel while pressed in, as a hand reaching for a floating panel
+        /// does, before pulling back.
+        /// </summary>
+        IEnumerator PokeSliding(Vector3 target, float slide)
+        {
+            Vector3 forward = (target - _head.position).normalized;
+            Vector3 up = Vector3.ProjectOnPlane(_head.up, forward).normalized;
+            _right.PosePoint(target - forward * 0.05f, forward);
+            yield return WaitSeconds(0.9f);
+            for (int i = 0; i <= 6; i++)
+            {
+                _right.PosePoint(target + forward * 0.002f + up * (slide * i / 6f), forward);
+                yield return WaitSeconds(0.03f);
+            }
+            _right.PosePoint(target + up * slide - forward * 0.06f, forward);
+            yield return WaitSeconds(0.1f);
+            ParkHands();
+            yield return null;
+        }
+
         // ---------------------------------------------------------------- scenarios
 
         IEnumerator MenuAndUnlocks()
@@ -1398,11 +1420,19 @@ namespace MiniPlanes
                 && afterCancel.fuel && !afterCancel.pathAlwaysOn);
             Check("and puts the editor away", !_gm.Editor.IsEditing && !_gm.creator.IsOpen);
 
-            // Fly it, untouchable, and count what turns up.
+            // Fly it, untouchable, and count what turns up. The poke slides 2.5 cm while pressed, as a real
+            // finger does: a list too short to scroll must not treat that as a drag and swallow the click.
             ParkHands();
-            _gm.menu.Press("cplay" + index);
+            Check("a short list of custom levels can't scroll", _gm.menu.customList.ScrollMax <= 0.5f, _gm.menu.customList.ScrollMax.ToString("F0"));
+            var playRow = _gm.menu.ButtonPosition("cplay" + index);
+            if (playRow.HasValue) yield return PokeSliding(playRow.Value, 0.025f);
             yield return WaitFor(() => _gm.menu.IsIntroPage, 3f);
-            Check("poking a custom level opens its Start page", _gm.menu.IsIntroPage && _gm.InCustom);
+            Check("a poke that slides on a custom level still opens its Start page", _gm.menu.IsIntroPage && _gm.InCustom);
+            if (!_gm.menu.IsIntroPage)
+            {
+                _gm.menu.Press("cplay" + index);
+                yield return WaitFor(() => _gm.menu.IsIntroPage, 3f);
+            }
             _gm.ConfirmStart();
             yield return WaitFor(() => _gm.CurrentFlow == GameManager.Flow.Flying, 10f);
             var plane = _gm.Plane;
@@ -2314,6 +2344,47 @@ namespace MiniPlanes
             Destroy(cfg);
             yield return AbortToMenu();
             Check("islands clear away with the level", FloatingIsland.Active.Count == 0 && IslandDebris.Active.Count == 0);
+        }
+
+        /// <summary>Passing the last tutorial level leaves one way back to the menu, not two.</summary>
+        IEnumerator LastLevelResult()
+        {
+            Note("Passing the last level: one Menu button on the result page");
+            int last = _gm.levels.Count - 1;
+            var cfg = _gm.levels[last];
+            // A short, ring-free run of the real level. The level is an asset, so put everything back after.
+            float duration = cfg.pathDurationSeconds;
+            int rings = cfg.requiredRingPasses;
+            bool fuel = cfg.useFuel;
+            cfg.pathDurationSeconds = 5f;
+            cfg.requiredRingPasses = 0;
+            cfg.useFuel = false;
+            try
+            {
+                yield return StartAndWaitForFlight(last);
+                _gm.Plane.DebugInvulnerable = true;
+                yield return WaitFor(() => _gm.CurrentFlow == GameManager.Flow.Result, 30f);
+                _gm.Plane.DebugInvulnerable = false;
+                Check("the last level can be passed", _gm.CurrentFlow == GameManager.Flow.Result && _gm.LastFlightPassed && _gm.LevelIndex == last);
+                int menus = 0;
+                foreach (var b in _gm.menu.resultPage.GetComponentsInChildren<PokeButton>(false))
+                {
+                    string label = b.GetComponentInChildren<UnityEngine.UI.Text>() != null ? b.GetComponentInChildren<UnityEngine.UI.Text>().text : "";
+                    if (b.id == "menu" || label == "MENU") menus++;
+                }
+                Check("its result page has one Menu button", menus == 1, menus + " buttons say MENU");
+                Check("and no Next button", !_gm.menu.ButtonPosition("next").HasValue);
+                Check("but Retry stays", _gm.menu.ButtonPosition("retry").HasValue);
+                _gm.menu.Press("menu");
+                yield return WaitFor(() => _gm.menu.IsStartPage, 3f);
+                Check("Menu goes back to the start page", _gm.menu.IsStartPage);
+            }
+            finally
+            {
+                cfg.pathDurationSeconds = duration;
+                cfg.requiredRingPasses = rings;
+                cfg.useFuel = fuel;
+            }
         }
 
         IEnumerator ZeppelinBoss()
