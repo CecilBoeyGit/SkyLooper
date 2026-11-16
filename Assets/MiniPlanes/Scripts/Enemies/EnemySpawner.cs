@@ -1,11 +1,13 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace MiniPlanes
 {
     /// <summary>
     /// Spawns fighters, bombers, balloons and booster tubes in front of the player during a flight, and the
-    /// zeppelin on a boss level.
+    /// zeppelin on a boss level. A custom level spawns by schedule instead (<see cref="BeginScheduled"/>):
+    /// each feature at set points along the path, until the level's count of it has appeared.
     /// </summary>
     public class EnemySpawner : MonoBehaviour
     {
@@ -35,6 +37,10 @@ namespace MiniPlanes
         public int TurretsSpawned { get; private set; }
         public int TubesSpawned { get; private set; }
         public int LivesSpawned { get; private set; }
+        /// <summary>The flight follows a custom level's schedule rather than the level's timers.</summary>
+        public bool IsScheduled => _schedule != null;
+        /// <summary>Scheduled spawns still to come in this flight.</summary>
+        public int ScheduledRemaining => _schedule == null ? 0 : _schedule.Count - _scheduleNext;
 
         LevelConfig _cfg;
         MiniPlane _target;
@@ -43,6 +49,13 @@ namespace MiniPlanes
         float _fighterTimer, _bomberTimer, _shieldTimer, _turretTimer, _tubeTimer, _lifeTimer;
         int _seed;
         System.Random _rng = new System.Random(1);
+        List<ScheduledSpawn> _schedule;
+        int _scheduleNext;
+        IslandField _islands;
+        readonly int[] _scheduledSpawned = new int[CustomFeatures.Count];
+
+        /// <summary>How many of a feature the schedule has spawned since the flight began.</summary>
+        public int ScheduledSpawned(CustomFeature feature) => _scheduledSpawned[(int)feature];
 
         public void Begin(LevelConfig cfg, MiniPlane target, Vector3 forward, int seed)
         {
@@ -55,6 +68,7 @@ namespace MiniPlanes
             if (_forward.sqrMagnitude < 1e-4f) _forward = Vector3.forward;
             _forward.Normalize();
             _active = cfg != null;
+            _schedule = null;
             ShieldsSpawned = TurretsSpawned = TubesSpawned = LivesSpawned = 0;
             if (!_active) return;
             _fighterTimer = cfg.fighterSpawnInterval * 0.4f;
@@ -66,9 +80,23 @@ namespace MiniPlanes
             if (cfg.bossLevel > 0) SpawnZeppelin(forward);
         }
 
+        /// <summary>
+        /// Starts a custom level's flight: no timers, just each feature at random points along the path, a
+        /// random number at a time, until the counts are reached. Islands appear through the island field.
+        /// </summary>
+        public void BeginScheduled(LevelConfig cfg, MiniPlane target, Vector3 forward, int seed, IReadOnlyList<int> counts, IslandField islands)
+        {
+            Begin(cfg, target, forward, seed);
+            _islands = islands;
+            Array.Clear(_scheduledSpawned, 0, _scheduledSpawned.Length);
+            _schedule = CustomLevelData.MakeSchedule(counts, seed * 13 + 5);
+            _scheduleNext = 0;
+        }
+
         public void End()
         {
             _active = false;
+            _schedule = null;
             EnemyPlane.DestroyAll();
             Projectile.DestroyAll();
             PowerBalloon.DestroyAll();
@@ -81,6 +109,11 @@ namespace MiniPlanes
         void Update()
         {
             if (!_active || _cfg == null) return;
+            if (_schedule != null)
+            {
+                UpdateSchedule();
+                return;
+            }
             float dt = Time.deltaTime;
 
             if (_cfg.maxFighters > 0)
@@ -156,6 +189,38 @@ namespace MiniPlanes
                     }
                 }
             }
+        }
+
+        void UpdateSchedule()
+        {
+            float progress = _target != null ? _target.Progress : 1f;
+            while (_scheduleNext < _schedule.Count && _schedule[_scheduleNext].at <= progress)
+            {
+                var due = _schedule[_scheduleNext++];
+                for (int i = 0; i < due.count; i++)
+                    if (SpawnFeature(due.feature)) _scheduledSpawned[(int)due.feature]++;
+            }
+        }
+
+        /// <summary>One of a custom level's features, wherever that kind usually appears. False if it found no room.</summary>
+        public bool SpawnFeature(CustomFeature feature)
+        {
+            switch (feature)
+            {
+                case CustomFeature.Fighter: SpawnFighter(); return true;
+                case CustomFeature.Bomber: SpawnBomber(); return true;
+                case CustomFeature.ShieldBalloon: ShieldsSpawned++; SpawnBalloon(BalloonKind.Shield); return true;
+                case CustomFeature.TurretBalloon: TurretsSpawned++; SpawnBalloon(BalloonKind.Turret); return true;
+                case CustomFeature.LifeBalloon: LivesSpawned++; SpawnBalloon(BalloonKind.Life); return true;
+                case CustomFeature.BoosterTube: TubesSpawned++; SpawnTube(PickTubeShape()); return true;
+                case CustomFeature.Island:
+                    if (_islands == null) return false;
+                    Vector3 headPos = head != null ? head.position : new Vector3(0f, 1.1f, 0f);
+                    var island = _islands.SpawnOne(_cfg, _target != null ? _target.Path : null, headPos, _forward, _rng,
+                        _target != null ? _target.Position : (Vector3?)null);
+                    return island != null;
+            }
+            return false;
         }
 
         /// <summary>Straight tubes most of the time, short or long; curved ones less often.</summary>

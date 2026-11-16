@@ -59,13 +59,65 @@ namespace MiniPlanes
                     if (Vector3.Distance(p.pos, pos) < (p.size + size) * 0.55f + 0.03f) { crowded = true; break; }
                 if (crowded) continue;
 
-                var go = new GameObject("FloatingIsland");
-                go.transform.SetParent(transform, false);
-                var island = go.AddComponent<FloatingIsland>();
-                island.Setup(size, rng.Next(), _art, _plane, _hands, pos);
+                CreateIsland(size, rng.Next(), pos);
                 placed.Add((pos, size));
             }
             PlaceTowers(cfg, path, rng);
+        }
+
+        FloatingIsland CreateIsland(float size, int seed, Vector3 pos)
+        {
+            var go = new GameObject("FloatingIsland");
+            go.transform.SetParent(transform, false);
+            var island = go.AddComponent<FloatingIsland>();
+            island.Setup(size, seed, _art, _plane, _hands, pos);
+            return island;
+        }
+
+        /// <summary>
+        /// One more island during a flight, for custom levels: somewhere off the path, clear of the other
+        /// islands, the plane and the hands. It grows in with a puff. Null if no spot was free.
+        /// </summary>
+        public FloatingIsland SpawnOne(LevelConfig cfg, CatmullRomPath path, Vector3 headPos, Vector3 forward, System.Random rng, Vector3? keepClearOf = null)
+        {
+            if (cfg == null) return null;
+            forward.y = 0f;
+            if (forward.sqrMagnitude < 1e-4f) forward = Vector3.forward;
+            forward.Normalize();
+            for (int a = 0; a < 120; a++)
+            {
+                float az = Mathf.Lerp(-halfArcDeg, halfArcDeg, (float)rng.NextDouble());
+                float dist = Mathf.Lerp(minHeadDistance, maxHeadDistance, (float)rng.NextDouble());
+                float height = Mathf.Lerp(minHeight, maxHeight, (float)rng.NextDouble());
+                float size = Mathf.Lerp(cfg.islandMinSize, cfg.islandMaxSize, (float)rng.NextDouble());
+                Vector3 pos = headPos + Quaternion.AngleAxis(az, Vector3.up) * forward * dist + Vector3.up * height;
+
+                if (path != null && DistanceToPath(path, pos) < size * 0.6f + cfg.islandPathClearance + FloatingIsland.BobHeight) continue;
+                if (keepClearOf.HasValue && Vector3.Distance(keepClearOf.Value, pos) < size * 0.5f + 0.15f) continue;
+                if (NearHand(pos, size * 0.5f + 0.06f)) continue;
+                bool crowded = false;
+                foreach (var other in FloatingIsland.Active)
+                    if (other != null && other.IsAlive && Vector3.Distance(other.Position, pos) < (other.Size + size) * 0.55f + 0.03f) { crowded = true; break; }
+                if (crowded) continue;
+
+                var island = CreateIsland(size, rng.Next(), pos);
+                island.GrowIn(0.45f);
+                ComicVfx.Play(ComicKind.Poof, pos, size * 0.8f);
+                return island;
+            }
+            return null;
+        }
+
+        bool NearHand(Vector3 pos, float distance)
+        {
+            if (_hands == null) return false;
+            foreach (var h in _hands)
+            {
+                if (h == null || !h.IsTracked) continue;
+                if (h.TryGetJoint(HandJoint.Palm, out var palm) && Vector3.Distance(palm, pos) < distance + 0.05f) return true;
+                if (h.TryGetJoint(HandJoint.IndexTip, out var tip) && Vector3.Distance(tip, pos) < distance) return true;
+            }
+            return false;
         }
 
         /// <summary>
@@ -134,6 +186,7 @@ namespace MiniPlanes
         /// <summary>How far an island bobs up and down, in metres. Placement leaves room for it.</summary>
         public const float BobHeight = 0.005f;
         int _seed;
+        float _growSeconds, _growAge;
         readonly List<BoneSegment> _segments = new List<BoneSegment>(32);
 
         public void Setup(float size, int seed, GameArt art, MiniPlane plane, HandSource[] hands, Vector3 position)
@@ -201,6 +254,14 @@ namespace MiniPlanes
             return Contains(world, margin) || (Tower != null && Tower.Contains(world, margin));
         }
 
+        /// <summary>Scales the island up from nothing over a moment, with a little overshoot.</summary>
+        public void GrowIn(float seconds)
+        {
+            _growSeconds = Mathf.Max(0.01f, seconds);
+            _growAge = 0f;
+            transform.localScale = Vector3.one * 0.01f;
+        }
+
         /// <summary>Moves the island somewhere else at once. For tests.</summary>
         public void MoveTo(Vector3 position)
         {
@@ -211,6 +272,15 @@ namespace MiniPlanes
         void Update()
         {
             if (!IsAlive) return;
+            if (_growSeconds > 0f)
+            {
+                _growAge += Time.deltaTime;
+                float k = Mathf.Clamp01(_growAge / _growSeconds);
+                // Ease out with a small overshoot, settling at full size.
+                float s = 1f + 2.2f * Mathf.Pow(k - 1f, 3f) + 1.2f * Mathf.Pow(k - 1f, 2f);
+                transform.localScale = Vector3.one * Mathf.Max(0.01f, k >= 1f ? 1f : s);
+                if (k >= 1f) _growSeconds = 0f;
+            }
             transform.position = _anchor + Vector3.up * (Mathf.Sin(Time.time * 0.7f + _bobPhase) * BobHeight);
             transform.Rotate(0f, 4f * Time.deltaTime, 0f, Space.World);
             if (GameManager.IsPaused) return;
