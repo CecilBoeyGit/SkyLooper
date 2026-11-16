@@ -1,6 +1,7 @@
 #if UNITY_EDITOR
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
@@ -99,6 +100,7 @@ namespace MiniPlanes
             yield return TryStep(LivesAndCoins());
             yield return TryStep(TutorialReplayPaysNothing());
             yield return TryStep(Hangar());
+            yield return TryStep(CustomLevels());
             yield return TryStep(IntroIcons());
             yield return TryStep(PlanePerks());
             yield return TryStep(Level4());
@@ -205,6 +207,30 @@ namespace MiniPlanes
             yield return WaitFor(() => _gm.menu.IsStartPage, 5f);
             yield return null;
             Shoot("start_panel");
+
+            // Custom Paths, and the Level Creator with a path pinched out and some features chosen.
+            _gm.ShowCustomMenu();
+            yield return Frames(3);
+            Shoot("custom_paths_page");
+            if (_gm.creator != null)
+            {
+                Vector3[] path = { InFront(0.45f, -0.28f, -0.1f), InFront(0.52f, -0.12f, 0.04f), InFront(0.46f, 0.04f, -0.12f), InFront(0.5f, 0.2f, 0.02f), InFront(0.44f, 0.3f, -0.08f) };
+                // A left pinch held from before the creator opens doesn't delete; it shows which point it would.
+                _left.PosePinch(path[2] + Vector3.up * 0.01f, Vector3.forward);
+                _gm.OpenCreator(-1);
+                yield return WaitFor(() => _gm.CurrentFlow == GameManager.Flow.Editor && _gm.creator.IsOpen, 3f);
+                foreach (var p in path) _gm.Editor.AddPoint(p);
+                foreach (var id in new[] { "feat_plus0", "feat_plus0", "feat_plus0", "feat_plus2", "feat_plus6", "feat_plus6" }) _gm.creator.Press(id);
+                yield return WaitSeconds(0.9f);
+                Shoot("level_creator_drawing");
+                ParkHands();
+                _head.rotation = Quaternion.Euler(32f, 0f, 0f);
+                yield return WaitSeconds(0.4f);
+                Shoot("level_creator_panel");
+                _head.rotation = Quaternion.identity;
+                _gm.creator.Press("cancel");
+                yield return WaitFor(() => _gm.menu.IsCustomPage, 3f);
+            }
 
             // A line of every model, noses pointing right, to check orientation and scale.
             var sheet = new GameObject("ModelSheet").transform;
@@ -548,6 +574,12 @@ namespace MiniPlanes
                 _gm.splash.SetHands(sources);
             }
             _gm.Islands.Init(_gm.art, sources, _gm.Plane);
+            _gm.Editor.SetHands(sources);
+            if (_gm.creator != null)
+            {
+                _gm.creator.SetHead(_head);
+                _gm.creator.SetHands(sources);
+            }
         }
 
         void ParkHands()
@@ -1187,6 +1219,224 @@ namespace MiniPlanes
             _gm.menu.Press("hangar_back");
             Check("Back returns to the start panel", _gm.menu.IsStartPage);
             yield return null;
+        }
+
+        /// <summary>A pinch with one hand at a point: open near it, pinch, let go, then out of the way.</summary>
+        IEnumerator Pinch(FakeHandSource hand, Vector3 at)
+        {
+            Vector3 toward = (at - _head.position).normalized;
+            hand.PosePoint(at - toward * 0.03f, toward);
+            yield return Frames(2);
+            hand.PosePinch(at, toward);
+            yield return Frames(3);
+            hand.PosePoint(at - toward * 0.06f, toward);
+            yield return Frames(2);
+            ParkHands();
+            yield return Frames(2);
+        }
+
+        IEnumerator CustomLevels()
+        {
+            Note("Custom Paths: the Level Creator, saving, editing and flying a custom level");
+            // The player's own levels stay: only what this test saves is deleted at the end.
+            var mine = new HashSet<string>();
+            foreach (var l in CustomLevelStore.LoadAll()) mine.Add(l.id);
+            _gm.ReloadCustomLevels();
+            int existing = _gm.CustomLevels.Count;
+            int coinsBefore = Progression.Coins;
+
+            var counts = new int[CustomFeatures.Count];
+            counts[(int)CustomFeature.Fighter] = 10;
+            counts[(int)CustomFeature.ShieldBalloon] = 3;
+            var schedule = CustomLevelData.MakeSchedule(counts, 1234);
+            int fighters = 0, shields = 0, fighterMoments = 0;
+            bool ordered = true, inside = true;
+            for (int i = 0; i < schedule.Count; i++)
+            {
+                var s = schedule[i];
+                if (s.feature == CustomFeature.Fighter) { fighters += s.count; fighterMoments++; }
+                if (s.feature == CustomFeature.ShieldBalloon) shields += s.count;
+                if (i > 0 && s.at < schedule[i - 1].at) ordered = false;
+                if (s.at <= 0f || s.at >= 1f || s.count < 1) inside = false;
+            }
+            Check("a schedule spawns exactly the chosen numbers", fighters == 10 && shields == 3, fighters + " fighters, " + shields + " shields");
+            Check("spread over several random moments along the flight", fighterMoments >= 3 && ordered && inside, fighterMoments + " moments");
+            var older = JsonUtility.FromJson<CustomLevelData>("{\"version\":1,\"id\":\"old\",\"name\":\"Old\",\"points\":[],\"counts\":[0,0,0,0,0,0,0]}");
+            Check("levels saved before the rules load with no fuel and the path always on", older != null && !older.fuel && older.pathAlwaysOn);
+            var ruled = new CustomLevelData { fuel = true, pathAlwaysOn = false };
+            var ruledCfg = ruled.CreateConfig(null);
+            Check("fuel on and a fading path set the flight's fuel and path reveal", ruledCfg.useFuel && ruledCfg.revealMode == PathRevealMode.TimedAtStart
+                && ruledCfg.streakToReveal == 3 && ruledCfg.startRevealSeconds > 0f);
+            var plainCfg = new CustomLevelData().CreateConfig(null);
+            Check("left alone, there is no fuel and the path stays on", !plainCfg.useFuel && plainCfg.revealMode == PathRevealMode.AlwaysVisible);
+            Destroy(ruledCfg);
+            Destroy(plainCfg);
+
+            yield return AbortToMenu();
+            var custom = _gm.menu.ButtonPosition("custom");
+            var infinite = _gm.menu.ButtonPosition("infinite");
+            Check("the start page has a Custom Paths button", custom.HasValue);
+            Check("it sits to the right of the Infinite section", custom.HasValue && infinite.HasValue && Vector3.Dot(custom.Value - infinite.Value, _head.right) > 0.05f);
+            if (custom.HasValue) yield return Poke(custom.Value);
+            Check("poking it opens the Custom Paths page", _gm.menu.IsCustomPage);
+            Check("the page lists every saved custom level", _gm.menu.CustomRowCount == existing, _gm.menu.CustomRowCount + " of " + existing);
+            Check("and has the Level Creator button", _gm.menu.ButtonPosition("creator_new").HasValue);
+            if (_gm.creator == null)
+            {
+                Check("the scene has a Level Creator panel", false);
+                yield break;
+            }
+
+            var creatorButton = _gm.menu.ButtonPosition("creator_new");
+            if (creatorButton.HasValue) yield return Poke(creatorButton.Value);
+            yield return WaitFor(() => _gm.CurrentFlow == GameManager.Flow.Editor && _gm.creator.IsOpen, 3f);
+            Check("New Level opens the Level Creator", _gm.CurrentFlow == GameManager.Flow.Editor && _gm.creator.IsOpen && !_gm.menu.IsOpen);
+            var creatorCanvas = _gm.creator.poke != null ? _gm.creator.poke.GetComponent<CurvedCanvas>() : null;
+            Check("its panel is curved and lazily follows the head", creatorCanvas != null && creatorCanvas.IsCurved && _gm.creator.follow != null && _gm.creator.follow.head == _head);
+            Check("it sits below eye level, leaving room to draw", creatorCanvas != null && creatorCanvas.transform.position.y < _head.position.y - 0.15f);
+            Check("Complete Level waits for a path", !_gm.creator.IsButtonInteractable("complete"));
+            Check("a new level starts with fuel off and the fly path always on", !_gm.creator.Fuel && _gm.creator.PathAlwaysOn
+                && _gm.creator.fuelState != null && _gm.creator.fuelState.text == "OFF" && _gm.creator.pathState != null && _gm.creator.pathState.text == "ON");
+            var fuelToggle = _gm.creator.ButtonPosition("toggle_fuel");
+            var pathToggle = _gm.creator.ButtonPosition("toggle_path");
+            Check("the panel has Fuel and Fly Path switches", fuelToggle.HasValue && pathToggle.HasValue);
+            if (fuelToggle.HasValue) yield return Poke(fuelToggle.Value);
+            if (pathToggle.HasValue) yield return Poke(pathToggle.Value);
+            Check("poking them switches fuel on and the always-on path off", _gm.creator.Fuel && !_gm.creator.PathAlwaysOn
+                && _gm.creator.fuelState.text == "ON" && _gm.creator.pathState.text == "OFF");
+            Check("a switch's colour shows its state", _gm.creator.fuelToggle.normalColor == _gm.creator.toggleOn && _gm.creator.pathToggle.normalColor == _gm.creator.toggleOff);
+            _gm.creator.Press("toggle_path");
+            _gm.creator.Press("toggle_path");
+            Check("a second press switches back", !_gm.creator.PathAlwaysOn);
+
+            Vector3[] points =
+            {
+                InFront(0.45f, -0.26f, -0.06f), InFront(0.5f, -0.06f, 0.03f), InFront(0.46f, 0.14f, -0.09f), InFront(0.5f, 0.3f, 0.01f)
+            };
+            foreach (var p in points) yield return Pinch(_right, p);
+            Check("right pinches add path points", _gm.Editor.PointCount == 4, _gm.Editor.PointCount.ToString());
+            bool placed = _gm.Editor.PointCount == 4;
+            for (int i = 0; placed && i < 4; i++) placed &= Vector3.Distance(_gm.Editor.Points[i], points[i]) < 0.002f;
+            Check("each point lands where the fingers met, in order", placed);
+            Check("Complete Level opens once there is a path", _gm.creator.IsButtonInteractable("complete"));
+
+            yield return Pinch(_left, InFront(0.32f, 0f, 0.22f));
+            Check("a left pinch away from the points deletes nothing", _gm.Editor.PointCount == 4);
+            yield return Pinch(_left, points[1] + Vector3.up * 0.012f);
+            Check("a left pinch on a point deletes it", _gm.Editor.PointCount == 3 && Vector3.Distance(_gm.Editor.Points[1], points[2]) < 0.002f);
+
+            var plus0 = _gm.creator.ButtonPosition("feat_plus0");
+            if (plus0.HasValue)
+            {
+                Vector3 toHead = (_head.position - plus0.Value).normalized;
+                // 4 cm out: inside the panel's no-pinch zone, but too far to press the button.
+                yield return Pinch(_right, plus0.Value + toHead * 0.04f);
+            }
+            Check("a pinch at the panel adds no point", _gm.Editor.PointCount == 3);
+
+            if (plus0.HasValue)
+            {
+                yield return Poke(plus0.Value);
+                yield return Poke(plus0.Value);
+            }
+            Check("poking + adds fighter jets", _gm.creator.GetCount(CustomFeature.Fighter) == 2, _gm.creator.GetCount(CustomFeature.Fighter).ToString());
+            _gm.creator.Press("feat_plus2");
+            _gm.creator.Press("feat_plus2");
+            _gm.creator.Press("feat_plus6");
+            _gm.creator.Press("feat_plus6");
+            _gm.creator.Press("feat_minus6");
+            Check("each feature has its own count, up and down", _gm.creator.GetCount(CustomFeature.ShieldBalloon) == 2 && _gm.creator.GetCount(CustomFeature.Island) == 1);
+            Check("counts never go below zero", !_gm.creator.IsButtonInteractable("feat_minus1"));
+
+            var complete = _gm.creator.ButtonPosition("complete");
+            if (complete.HasValue) yield return Poke(complete.Value);
+            yield return WaitFor(() => _gm.menu.IsCustomPage, 3f);
+            Check("Complete Level saves and returns to Custom Paths", _gm.menu.IsCustomPage && _gm.CustomLevels.Count == existing + 1 && _gm.LastSavedLevel != null);
+            var saved = _gm.LastSavedLevel;
+            CustomLevelData onDisk = null;
+            foreach (var l in CustomLevelStore.LoadAll()) if (saved != null && l.id == saved.id) onDisk = l;
+            Check("the saved level keeps its path and features", onDisk != null && onDisk.points.Count == 3 && onDisk.GetCount(CustomFeature.Fighter) == 2
+                && onDisk.GetCount(CustomFeature.ShieldBalloon) == 2 && onDisk.GetCount(CustomFeature.Island) == 1 && onDisk.GetCount(CustomFeature.Bomber) == 0);
+            Check("and its rules: fuel on, the path fading", onDisk != null && onDisk.fuel && !onDisk.pathAlwaysOn);
+            Check("and is listed", _gm.menu.CustomRowCount == existing + 1);
+            if (onDisk == null) yield break;
+
+            int index = -1;
+            for (int i = 0; i < _gm.CustomLevels.Count; i++) if (_gm.CustomLevels[i].id == onDisk.id) index = i;
+            var edit = _gm.menu.ButtonPosition("cedit" + index);
+            Check("its row has an Edit Level button", edit.HasValue);
+            if (edit.HasValue) yield return Poke(edit.Value);
+            yield return WaitFor(() => _gm.CurrentFlow == GameManager.Flow.Editor && _gm.creator.IsOpen, 3f);
+            Check("Edit Level opens the Level Creator on that level", _gm.CurrentFlow == GameManager.Flow.Editor && _gm.EditingLevel != null && _gm.EditingLevel.id == onDisk.id);
+            bool same = _gm.Editor.PointCount == 3;
+            for (int i = 0; same && i < 3; i++)
+                same &= Vector3.Distance(_gm.Editor.Points[i], CustomLevelData.ToWorld(onDisk.points[i], _head.position, _head.forward)) < 0.002f;
+            Check("with its points back where they were", same);
+            Check("and its feature counts", _gm.creator.GetCount(CustomFeature.Fighter) == 2 && _gm.creator.GetCount(CustomFeature.ShieldBalloon) == 2 && _gm.creator.GetCount(CustomFeature.Island) == 1);
+            Check("and its rules", _gm.creator.Fuel && !_gm.creator.PathAlwaysOn && _gm.creator.fuelState.text == "ON" && _gm.creator.pathState.text == "OFF");
+
+            // Up in the open: low points near the panel are in its no-pinch zone.
+            yield return Pinch(_right, InFront(0.48f, 0.0f, 0.06f));
+            _gm.creator.Press("feat_plus1");
+            _gm.creator.Press("complete");
+            yield return WaitFor(() => _gm.menu.IsCustomPage, 3f);
+            CustomLevelData edited = null;
+            foreach (var l in CustomLevelStore.LoadAll()) if (l.id == onDisk.id) edited = l;
+            Check("editing saves over the same level", _gm.CustomLevels.Count == existing + 1 && edited != null && edited.points.Count == 4
+                && edited.GetCount(CustomFeature.Bomber) == 1 && edited.name == onDisk.name);
+
+            _gm.menu.Press("cedit" + index);
+            yield return WaitFor(() => _gm.CurrentFlow == GameManager.Flow.Editor && _gm.creator.IsOpen, 3f);
+            yield return Pinch(_right, InFront(0.5f, -0.3f, 0.04f));
+            _gm.creator.Press("feat_plus0");
+            _gm.creator.Press("toggle_fuel");
+            _gm.creator.Press("cancel");
+            yield return WaitFor(() => _gm.menu.IsCustomPage, 3f);
+            CustomLevelData afterCancel = null;
+            foreach (var l in CustomLevelStore.LoadAll()) if (l.id == onDisk.id) afterCancel = l;
+            Check("Cancel leaves the level as it was", _gm.menu.IsCustomPage && afterCancel != null && afterCancel.points.Count == 4 && afterCancel.GetCount(CustomFeature.Fighter) == 2
+                && afterCancel.fuel && !afterCancel.pathAlwaysOn);
+            Check("and puts the editor away", !_gm.Editor.IsEditing && !_gm.creator.IsOpen);
+
+            // Fly it, untouchable, and count what turns up.
+            ParkHands();
+            _gm.menu.Press("cplay" + index);
+            yield return WaitFor(() => _gm.menu.IsIntroPage, 3f);
+            Check("poking a custom level opens its Start page", _gm.menu.IsIntroPage && _gm.InCustom);
+            _gm.ConfirmStart();
+            yield return WaitFor(() => _gm.CurrentFlow == GameManager.Flow.Flying, 10f);
+            var plane = _gm.Plane;
+            var level = _gm.CustomLevels[index];
+            Vector3 start = CustomLevelData.ToWorld(level.points[0], _head.position, _head.forward);
+            Vector3 end = CustomLevelData.ToWorld(level.points[level.points.Count - 1], _head.position, _head.forward);
+            Check("the plane flies the drawn path, start to finish", plane.Path != null && Vector3.Distance(plane.Path.PositionAt(0f), start) < 0.005f
+                && Vector3.Distance(plane.Path.PositionAt(plane.Path.Length), end) < 0.005f);
+            Check("as one wave, by schedule", _gm.spawner.IsScheduled && !_gm.InInfinite);
+            Check("with fuel, as the level was saved", plane.FuelEnabled && _gm.CurrentConfig.useFuel);
+            Check("and its path fading after take-off, as in Infinite", _gm.CurrentConfig.revealMode == PathRevealMode.TimedAtStart && _gm.revealer.IsRevealing);
+            for (int i = 0; i < 3; i++) _gm.revealer.OnRingPass();
+            Check("three rings in a row bring the path back", _gm.revealer.StreakRevealing);
+            plane.DebugInvulnerable = true;
+            float flight = plane.Path.Length / Mathf.Max(0.01f, plane.BaseSpeed) + 8f;
+            yield return WaitFor(() => !plane.IsFlying, flight);
+            Check("every feature appeared by the end, in the numbers chosen",
+                _gm.spawner.ScheduledSpawned(CustomFeature.Fighter) == 2 && _gm.spawner.ScheduledSpawned(CustomFeature.Bomber) == 1
+                && _gm.spawner.ScheduledSpawned(CustomFeature.ShieldBalloon) == 2 && _gm.spawner.ScheduledSpawned(CustomFeature.Island) == 1,
+                _gm.spawner.ScheduledSpawned(CustomFeature.Fighter) + " fighters, " + _gm.spawner.ScheduledSpawned(CustomFeature.Bomber) + " bombers, "
+                + _gm.spawner.ScheduledSpawned(CustomFeature.ShieldBalloon) + " shields, " + _gm.spawner.ScheduledSpawned(CustomFeature.Island) + " islands");
+            plane.DebugInvulnerable = false;
+            yield return WaitFor(() => _gm.CurrentFlow == GameManager.Flow.Result, 5f);
+            Check("finishing the path passes the level", _gm.LastFlightPassed && _gm.CurrentFlow == GameManager.Flow.Result);
+            Check("custom levels pay no coins", Progression.Coins == coinsBefore, Progression.Coins + " from " + coinsBefore);
+            _gm.menu.Press("menu");
+            yield return WaitFor(() => _gm.menu.IsCustomPage, 3f);
+            Check("Menu goes back to Custom Paths", _gm.menu.IsCustomPage);
+            _gm.menu.Press("custom_back");
+            Check("Back returns to the start page", _gm.menu.IsStartPage);
+
+            foreach (var l in CustomLevelStore.LoadAll())
+                if (!mine.Contains(l.id)) CustomLevelStore.Delete(l.id);
+            _gm.ReloadCustomLevels();
         }
 
         IEnumerator Turret()
