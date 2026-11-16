@@ -604,7 +604,6 @@ namespace MiniPlanes
 
             string detail;
             bool hasNext = index + 1 < levels.Count;
-            string nextLabel = hasNext ? "NEXT" : "MENU";
             if (LastFlightPassed)
             {
                 detail = index + 1 == Progression.LevelsForInfinite
@@ -622,8 +621,9 @@ namespace MiniPlanes
             {
                 detail = "The plane made it, but needed " + _cfg.requiredRingPasses + " ring passes. You got " + RingsThisFlight + ".";
             }
+            // After the last level there is nothing next: the page's own Menu button is the way on, so no second one.
             if (menu != null)
-                menu.ShowResult(LastFlightPassed ? "LEVEL PASSED" : "TRY AGAIN", detail, "SCORE  " + Score, LastFlightPassed, LastFlightPassed, nextLabel, CoinsThisRun);
+                menu.ShowResult(LastFlightPassed ? "LEVEL PASSED" : "TRY AGAIN", detail, "SCORE  " + Score, LastFlightPassed, LastFlightPassed && hasNext, "NEXT", CoinsThisRun);
             Sfx.Play(LastFlightPassed ? SoundKind.LevelComplete : SoundKind.LevelFailed);
             if (LastFirstClearCoins > 0) Sfx.Play(SoundKind.Reward, 0.7f);
         }
