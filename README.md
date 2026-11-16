@@ -10,7 +10,8 @@ a hit. Each tutorial level and each Infinite run has 3 lives; after a crash the 
 To pause, face a palm toward you and press the Menu button on that wrist with your other hand. Six tutorial
 levels introduce the mechanics one at a time, each opening on a page with a Start button, and passing them
 all opens the endless Infinite mode and a seventh level for playtesting the zeppelin boss. Coins earned in
-Infinite buy new planes and paint in the Hangar.
+Infinite buy new planes and paint in the Hangar. In **Custom Paths** you pinch your own flight path into the
+air, choose its enemies, powerups and islands, and fly it.
 
 ## Scoring
 
@@ -83,8 +84,45 @@ A level passes when the plane finishes its path with enough ring passes (`requir
 only ever shows the part of the path still ahead of the plane.
 
 Tutorial Start pages draw icons in their text: write `{fighter}`, `{bomber}`, `{zeppelin}`, `{missile}`,
-`{shield}`, `{turret}`, `{bomb}` or `{tube}` in a level's `introCaption` (`InlineIcons`; the pictures are in
+`{shield}`, `{turret}`, `{life}`, `{bomb}`, `{tube}`, `{island}`, `{fuel}` or `{fade}` in a level's `introCaption` (`InlineIcons`; the pictures are in
 `GameArt.captionIcons` and `Assets/MiniPlanes/Art/UI`).
+
+## Custom Paths
+
+The start page's **Custom Paths** section, right of Infinite, opens a page with your levels on the left
+(poke a row to fly it, **Edit** to change it) and the **Level Creator** on the right (**New Level**).
+
+In the Level Creator the menu goes away and a curved panel floats low in front of you, lazily following your
+head and tilted up, leaving the space above it free to draw in:
+
+- **Right pinch** in the air adds a path point where your thumb and index meet. Points join up in the order
+  you add them, into the same smooth spline the plane flies; the first is the start (teal), the last the
+  finish (coral). A small ghost shows where the point will go as you close your fingers.
+- **Left pinch** on a point deletes it (it turns red when you are in reach).
+- Pinches on or right next to the panel are ignored, so reaching for a button can't drop a point.
+- The panel's left side is a looping mini tutorial of both pinches. Its right side lists the **level
+  features**: fighter jets, bombers, shield, turret and heart balloons, booster tubes and floating islands,
+  each with **-** and **+** for how many the level has. Under them are the level's **rules**, two switches:
+  - **Fuel** (off by default): the plane burns fuel and every ring pass tops it up, as in the fuel
+    tutorial and Infinite. Running dry costs a life.
+  - **Fly Path** always on (on by default): the line shows for the whole flight. Switched off, it works
+    like Infinite: it shows through the countdown and the first few seconds after take-off, then fades,
+    and three ring passes in a row bring it back for a while.
+- **Complete Level** (open once the path has 2 points) saves it, named Path 1, Path 2, and so on.
+  **Cancel** leaves without saving. **Edit Level** opens the same creator with the level's points, counts
+  and rules in place, and saving writes over it.
+
+A custom level is one wave on one path. The plane flies the path exactly as drawn, laid out around where
+you are facing when it starts, with fuel and the line as its rules say. In the Custom Paths list, `{fuel}`
+marks a level with fuel and `{fade}` one whose path fades. Each feature appears at random moments along
+the flight, a random number at a time (up to a third of its total), until its count is reached: enemies
+by about 80% of the path, powerups and islands by about 75%, so everything has time to matter. Islands grow
+in off the path, clear of the plane and your hands. Finishing the path passes; 3 lives, one hit per life.
+Custom levels score points but pay no coins.
+
+Levels are JSON files, one per level, in `Application.persistentDataPath/CustomLevels` (on Quest,
+`/sdcard/Android/data/com.miniplanes.quest/files/CustomLevels`). Points are stored relative to your head and
+the way it faced, so a path keeps its shape around you wherever you sit.
 
 ## Sound
 
@@ -120,7 +158,12 @@ Everything gameplay-related is exposed in the Inspector:
   **`PausePanel`** on `PausePanel`: reach, follow speed, button layout, poke depth.
 - **`Assets/MiniPlanes/Levels/Planes.asset`**: the Hangar's planes, prices, perks, paint palettes and where
   the turret mounts on each.
-- **`GameManager`**: points and coins per action; `devUnlockAll` opens every level and `devUnlockAllPlanes`
+- **`LevelCreatorPanel`** on `LevelCreatorPanel`: the no-pinch zone round the panel. The panel's placement,
+  tilt and follow are on its `Canvas` and `Follow` children. **`LevelEditor`** (made at runtime under `Game`):
+  delete reach, point spacing, marker and line look. Feature limits and timing windows are in
+  `CustomFeatures` (`Core/CustomLevel.cs`).
+- **`GameManager`**: `customLevelBase`, an optional level asset whose plane speed and enemy and balloon
+  behaviour custom levels use (empty: the defaults at 0.25 m/s); points and coins per action; `devUnlockAll` opens every level and `devUnlockAllPlanes`
   every plane, without saving anything; `devCoinsOnStart` tops up the coins; `devResetProgressOnStart` wipes
   saved progress. All are off in shipped settings.
 
@@ -131,7 +174,8 @@ so you can restyle them with your own sprites and fonts:
 
 | Prefab | What it is |
 |---|---|
-| `MenuPanel` | Start page, level intro with its Start button, result page and Hangar |
+| `MenuPanel` | Start page, level intro with its Start button, result page, Hangar and Custom Paths |
+| `LevelCreatorPanel` | The Level Creator: pinch tutorial, feature counts, Complete Level and Cancel |
 | `CockpitHUD` | Progress bar with a sliding plane knob and a finish flag, score, level, lives and coins, plus the caption line |
 | `PausePanel` | Resume, Restart, Main Menu |
 | `WristMenuButton` | The palm-up Menu button |
@@ -162,7 +206,8 @@ Unity.exe -batchmode -nographics -buildTarget Android -projectPath D:/Unity/Mini
 `MiniPlanes > 4. Run Autopilot Checks` plays the real scene with simulated hands at a fixed timestep and
 checks each mechanic: path limits, unlocks, poking the menu, ring scoring, the O merge, fuel rates,
 bullets, flicks, balloons, the turret, plane perks, booster tubes, islands, bomb arming, chaining, covering,
-coins, Infinite's waves and the zeppelin. Results are logged as
+coins, Infinite's waves, the zeppelin, and custom levels (creating, pinching points, saving, editing,
+cancelling and flying one). The custom level check deletes only the levels it made. Results are logged as
 `[AUTOPILOT] PASS` or `FAIL`. Headless, leave out `-quit`, and the exit code is 0 only if all pass:
 
 ```
@@ -192,16 +237,19 @@ HUD, Hangar, stencil reveal, comic VFX, booster tubes, islands and the zeppelin 
 | `Hands/HandHazard.cs`, `FlickDetector.cs`, `BalloonGrabber.cs` | Rock hands, flicks, pinch-drag and tube holding. |
 | `Hands/HandMotion.cs` | Shared hand speed, to tell a gentle hold from a smack. |
 | `Enemies/EnemyPlane.cs`, `BomberPlane.cs`, `Projectile.cs` | Fighters, bombers, machine-gun rounds. |
-| `Enemies/PowerBalloon.cs`, `BombBalloon.cs`, `EnemySpawner.cs` | Balloons and spawning. |
+| `Enemies/PowerBalloon.cs`, `BombBalloon.cs`, `EnemySpawner.cs` | Balloons and spawning, by timers or by a custom level's schedule. |
 | `Enemies/BoosterTube.cs` | Booster tubes: their shapes, holding, and the clean-pass test. |
 | `Enemies/Zeppelin.cs`, `BossMissile.cs` | The boss and its attacks; palm-held missiles. |
-| `World/FloatingIslands.cs` | Infinite's islands, their shards and dust. |
+| `World/FloatingIslands.cs` | Islands (placed per wave, or grown in mid-flight in custom levels), their shards and dust. |
 | `World/JammingTower.cs` | Towers on the islands that silence the enemy warning. |
 | `Audio/GameSounds.cs`, `Audio/Sfx.cs` | The sound list, and the pooled player every event calls. |
 | `UI/CurvedCanvas.cs`, `CurvedGraphic.cs`, `LazyFollow.cs` | Bending uGUI onto a cylinder; smooth follow. |
 | `UI/PokeCanvas.cs`, `PokeButton.cs`, `PokeScrollArea.cs` | Fingertip input for any canvas. |
 | `UI/CurvedHud.cs`, `UI/MenuPanel.cs` | The HUD, and the menu with its intro, result and Hangar pages. |
 | `UI/WristMenuButton.cs`, `UI/PausePanel.cs` | Palm-up wrist button; curved lazy-follow pause menu. |
+| `Core/CustomLevel.cs` | Custom levels: the features, the saved data, the spawn schedule, and saving to JSON. |
+| `Core/LevelEditor.cs` | The Level Creator in the room: pinching points, deleting them, drawing the path. |
+| `UI/LevelCreatorPanel.cs`, `CreatorTutorialMotion.cs`, `CustomLevelRow.cs` | The creator panel, its animated tutorial, and a row of the Custom Paths list. |
 
 Shaders in `Assets/MiniPlanes/Shaders`: `Matte` (printed polymer), `BubbleRing` (radial fill, wobble,
 peanut merge, finger-shaped outline), `OccludedSilhouette` (solid plane reveal behind hands), `PathLine`,
