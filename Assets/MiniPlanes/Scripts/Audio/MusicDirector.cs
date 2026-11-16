@@ -243,6 +243,7 @@ namespace MiniPlanes
                     return g.menu != null && g.menu.IsOpen && !g.menu.IsStartPage ? Piece.Menu : Piece.StartMenu;
                 case GameManager.Flow.Intro:
                 case GameManager.Flow.Result:
+                case GameManager.Flow.Editor:
                     return Piece.Menu;
                 default:
                     return Zeppelin.Current != null ? Piece.Boss : Piece.Game;

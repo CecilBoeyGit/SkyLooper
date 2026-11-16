@@ -7,8 +7,9 @@ namespace MiniPlanes
 {
     /// <summary>
     /// The main menu on a curved, lazily following panel, used by poking. Its pages are: Start (Tutorial
-    /// list, Infinite, Hangar and coins), the level intro with its Start button, the result screen, and the
-    /// Hangar for buying planes and choosing their paint. Every visible part lives in the MenuPanel prefab
+    /// list, Infinite, Custom Paths, Hangar and coins), the level intro with its Start button, the result
+    /// screen, the Hangar for buying planes and choosing their paint, and Custom Paths: the player's own
+    /// levels on the left (fly or edit each) and the Level Creator on the right. Every visible part lives in the MenuPanel prefab
     /// and is linked below, so it can be restyled freely as long as the links and button ids stay.
     /// </summary>
     public class MenuPanel : MonoBehaviour
@@ -41,6 +42,7 @@ namespace MiniPlanes
         public GameObject introPage;
         public GameObject resultPage;
         public GameObject hangarPage;
+        public GameObject customPage;
 
         [Header("Start page")]
         public Text startCoins;
@@ -51,6 +53,19 @@ namespace MiniPlanes
         public Text infiniteBest;
         public Text infiniteLock;
         public PokeButton hangarButton;
+        [Tooltip("Opens the Custom Paths page. Sits to the right of the Infinite section.")]
+        public PokeButton customButton;
+        [Tooltip("How many custom levels there are, under the Custom Paths button.")]
+        public Text customInfo;
+
+        [Header("Custom Paths page")]
+        public PokeScrollArea customList;
+        [Tooltip("A hidden row that is copied for each saved custom level.")]
+        public CustomLevelRow customRowTemplate;
+        public float customRowGap = 10f;
+        [Tooltip("Shown in the list while there are no custom levels.")]
+        public Text customEmpty;
+        public PokeButton creatorButton;
 
         [Header("Level intro")]
         public Text introNumber;
@@ -114,6 +129,14 @@ namespace MiniPlanes
         public event Action StartChosen;
         public event Action BackChosen;
         public event Action RespawnChosen;
+        /// <summary>The Custom Paths button on the start page.</summary>
+        public event Action CustomChosen;
+        /// <summary>A custom level's row, by its place in the list.</summary>
+        public event Action<int> CustomPlayChosen;
+        /// <summary>A custom level's Edit button, by its place in the list.</summary>
+        public event Action<int> CustomEditChosen;
+        /// <summary>The Level Creator's New Level button.</summary>
+        public event Action CreatorChosen;
         /// <summary>The player changed which plane they fly, or its paint.</summary>
         public event Action PlaneChanged;
 
@@ -121,12 +144,17 @@ namespace MiniPlanes
         public bool IsStartPage => IsOpen && startPage != null && startPage.activeSelf;
         public bool IsIntroPage => IsOpen && introPage != null && introPage.activeSelf;
         public bool IsHangarPage => IsOpen && hangarPage != null && hangarPage.activeSelf;
+        public bool IsCustomPage => IsOpen && customPage != null && customPage.activeSelf;
+        /// <summary>Custom level rows showing on the Custom Paths page.</summary>
+        public int CustomRowCount { get; private set; }
         public int ViewingPlane => _viewing;
 
         IReadOnlyList<LevelConfig> _levels;
         int _viewing;
         GameObject _preview;
         readonly Dictionary<string, PokeButton> _byId = new Dictionary<string, PokeButton>();
+        readonly List<CustomLevelRow> _customRows = new List<CustomLevelRow>();
+        int _customCount = -1;
 
         void Awake()
         {
@@ -157,7 +185,7 @@ namespace MiniPlanes
         void Open(GameObject page, int inputDelayFrames)
         {
             if (poke != null) poke.gameObject.SetActive(true);
-            foreach (var p in new[] { startPage, introPage, resultPage, hangarPage })
+            foreach (var p in new[] { startPage, introPage, resultPage, hangarPage, customPage })
                 if (p != null) p.SetActive(p == page);
             if (page != hangarPage) ClearPreview();
             if (follow != null)
@@ -184,8 +212,14 @@ namespace MiniPlanes
         /// <summary>The page before a tutorial level: its name, what it teaches, lives, and Start.</summary>
         public void ShowIntro(int levelNumber, string title, string caption, int lives)
         {
+            ShowIntro("LEVEL " + levelNumber, title, caption, lives);
+        }
+
+        /// <summary>The page before a level, with any small heading above its name.</summary>
+        public void ShowIntro(string heading, string title, string caption, int lives)
+        {
             Open(introPage, 30);
-            if (introNumber != null) introNumber.text = "LEVEL " + levelNumber;
+            if (introNumber != null) introNumber.text = heading;
             if (introTitle != null) introTitle.text = title;
             if (introIcons != null) introIcons.SetText(caption);
             else if (introCaption != null) introCaption.text = caption;
@@ -263,6 +297,16 @@ namespace MiniPlanes
             _fade = null;
         }
 
+        /// <summary>
+        /// The Custom Paths page: the saved custom levels on the left, each to fly or edit, and the Level
+        /// Creator on the right. The plane speed works out each level's flight time.
+        /// </summary>
+        public void ShowCustom(IReadOnlyList<CustomLevelData> levels, float planeSpeed)
+        {
+            Open(customPage, 20);
+            BuildCustomRows(levels, planeSpeed);
+        }
+
         public void ShowHangar()
         {
             Open(hangarPage, 20);
@@ -338,6 +382,8 @@ namespace MiniPlanes
             if (infiniteLabel != null) infiniteLabel.color = infinite ? Color.white : muted;
             SetText(infiniteBest, "BEST  " + Progression.HighScore);
             SetText(infiniteLock, infinite ? "Survive wave after wave." : "Pass all six tutorial levels to unlock.");
+            if (_customCount < 0) _customCount = CustomLevelStore.LoadAll().Count;
+            SetText(customInfo, _customCount == 0 ? "No levels made yet." : _customCount == 1 ? "1 level made." : _customCount + " levels made.");
 
             if (levelList != null)
             {
@@ -347,6 +393,55 @@ namespace MiniPlanes
                     : 100f;
                 levelList.SetScroll((newest - 1) * rowStep);
             }
+        }
+
+        // ---------------------------------------------------------------- custom paths
+
+        void BuildCustomRows(IReadOnlyList<CustomLevelData> levels, float planeSpeed)
+        {
+            int count = levels != null ? levels.Count : 0;
+            _customCount = count;
+            CustomRowCount = 0;
+            if (customEmpty != null) customEmpty.gameObject.SetActive(count == 0);
+            if (customRowTemplate == null || customList == null || customList.content == null) return;
+            customRowTemplate.gameObject.SetActive(false);
+
+            var content = customList.content;
+            float rowHeight = customRowTemplate.Rect.rect.height;
+            float step = rowHeight + customRowGap;
+            while (_customRows.Count < count)
+            {
+                var copy = Instantiate(customRowTemplate, content);
+                copy.name = "CustomRow" + _customRows.Count;
+                if (copy.detailIcons != null && art != null) copy.detailIcons.icons = art.captionIcons;
+                _customRows.Add(copy);
+            }
+            for (int i = 0; i < _customRows.Count; i++)
+            {
+                var row = _customRows[i];
+                bool used = i < count;
+                row.gameObject.SetActive(used);
+                if (!used) continue;
+                var level = levels[i];
+                row.Rect.anchoredPosition = new Vector2(row.Rect.anchoredPosition.x, -i * step);
+                if (row.play != null) row.play.id = "cplay" + i;
+                if (row.edit != null) row.edit.id = "cedit" + i;
+                SetText(row.levelName, string.IsNullOrEmpty(level.name) ? "Custom Path" : level.name);
+                float seconds = planeSpeed > 0f ? CustomLevelData.PathLength(level.points) / planeSpeed : 0f;
+                string features = level.FeatureSummary("  ");
+                string rules = level.RulesIcons();
+                string detail = level.points.Count + " points  ·  " + Mathf.Max(1, Mathf.RoundToInt(seconds)) + " s" +
+                                (string.IsNullOrEmpty(rules) ? "" : "  ·  " + rules) +
+                                (string.IsNullOrEmpty(features) ? "  ·  no features" : "  ·  " + features);
+                if (row.detailIcons != null) row.detailIcons.SetText(detail);
+                else SetText(row.detail, detail);
+                if (row.play != null) row.play.Interactable = level.IsPlayable;
+                CustomRowCount++;
+            }
+            content.sizeDelta = new Vector2(content.sizeDelta.x, Mathf.Max(0f, count * step - customRowGap));
+            customList.SetScroll(0f);
+            if (customPage != null) CurvedCanvas.MarkDirty(customPage.transform);
+            IndexButtons();
         }
 
         // ---------------------------------------------------------------- hangar
@@ -474,8 +569,13 @@ namespace MiniPlanes
                 case "retry": RetryChosen?.Invoke(); return;
                 case "menu": MenuChosen?.Invoke(); return;
                 case "plane_action": PlaneAction(); return;
+                case "custom": CustomChosen?.Invoke(); return;
+                case "custom_back": ShowStart(_levels); return;
+                case "creator_new": CreatorChosen?.Invoke(); return;
             }
-            if (TryIndex(id, "level", out int level)) LevelChosen?.Invoke(level);
+            if (TryIndex(id, "cplay", out int play)) CustomPlayChosen?.Invoke(play);
+            else if (TryIndex(id, "cedit", out int edit)) CustomEditChosen?.Invoke(edit);
+            else if (TryIndex(id, "level", out int level)) LevelChosen?.Invoke(level);
             else if (TryIndex(id, "plane", out int plane)) ViewPlane(plane);
             else if (TryIndex(id, "palette", out int palette)) ChoosePalette(palette);
         }

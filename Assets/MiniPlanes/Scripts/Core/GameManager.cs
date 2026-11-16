@@ -8,12 +8,14 @@ namespace MiniPlanes
     /// Top-level game flow: start panel, the tutorial levels with their intro page and unlocks, the Infinite
     /// wave mode with its islands and boss waves, lives and respawns, pause, plane perks, and the scoring and
     /// coins that tie rings, flicks, turrets, bomb covers, missiles, fuel and the HUD together. Coins are only
-    /// earned in Infinite, plus a one-off reward for clearing each tutorial level the first time.
+    /// earned in Infinite, plus a one-off reward for clearing each tutorial level the first time. Custom
+    /// levels are made in the Level Creator (pinched paths plus feature counts), saved by
+    /// <see cref="CustomLevelStore"/>, and flown as one wave on their one path; they pay no coins.
     /// </summary>
     [DefaultExecutionOrder(-10)]
     public class GameManager : MonoBehaviour
     {
-        public enum Flow { Menu, Intro, PreFlight, Flying, Result }
+        public enum Flow { Menu, Intro, PreFlight, Flying, Result, Editor }
 
         /// <summary>The pause menu is open and the game clock is stopped. Hands must not affect the game.</summary>
         public static bool IsPaused { get; private set; }
@@ -26,6 +28,8 @@ namespace MiniPlanes
         public CurvedHud hud;
         public MenuPanel menu;
         public PausePanel pausePanel;
+        [Tooltip("The Level Creator's floating panel: the tutorial, the feature counts and Complete Level.")]
+        public LevelCreatorPanel creator;
         [Tooltip("The opening logo and Start button, shown once when the game starts.")]
         public SplashPanel splash;
         public WristMenuButton wristMenu;
@@ -39,6 +43,8 @@ namespace MiniPlanes
         [Header("Levels")]
         public List<LevelConfig> levels = new List<LevelConfig>();
         public InfiniteConfig infinite;
+        [Tooltip("Optional tuning for flying custom levels: plane speed, enemy and balloon behaviour. Each level's path, lives and features replace the rest. Empty uses the defaults.")]
+        public LevelConfig customLevelBase;
 
         [Header("Score points")]
         [Tooltip("Points for flying through a single-hand C ring. It is small, so it pays more.")]
@@ -106,6 +112,20 @@ namespace MiniPlanes
         public IslandField Islands => _islands;
         /// <summary>The coins the last tutorial pass paid for a first clear, or 0.</summary>
         public int LastFirstClearCoins { get; private set; }
+        /// <summary>Flying a custom level.</summary>
+        public bool InCustom { get; private set; }
+        /// <summary>The custom level last flown, by its place in <see cref="CustomLevels"/>.</summary>
+        public int CustomIndex { get; private set; } = -1;
+        /// <summary>The saved custom levels, oldest first.</summary>
+        public IReadOnlyList<CustomLevelData> CustomLevels => _customLevels;
+        /// <summary>The Level Creator's world side: the points and path being edited.</summary>
+        public LevelEditor Editor => _editor;
+        /// <summary>The level open in the Level Creator, or null while making a new one.</summary>
+        public CustomLevelData EditingLevel => _editing;
+        /// <summary>The level the last Complete Level saved.</summary>
+        public CustomLevelData LastSavedLevel { get; private set; }
+        /// <summary>How fast custom levels fly, which sets their flight time.</summary>
+        public float CustomPlaneSpeed => customLevelBase != null ? customLevelBase.planeSpeed : CustomLevelData.DefaultPlaneSpeed;
 
         MiniPlane _plane;
         LevelConfig _cfg;
@@ -117,6 +137,11 @@ namespace MiniPlanes
         bool _perkTurretPending;
         bool _titlePlayed;
         bool _respawnBought;
+        List<CustomLevelData> _customLevels = new List<CustomLevelData>();
+        LevelEditor _editor;
+        CustomLevelData _editing;
+        LevelConfig _customConfig;
+        bool _menuToCustom;
 
         void Awake()
         {
@@ -203,6 +228,19 @@ namespace MiniPlanes
             _islands.transform.SetParent(transform, false);
             _islands.Init(art, spawner != null ? spawner.hands : null, _plane);
 
+            _customLevels = CustomLevelStore.LoadAll();
+            _editor = new GameObject("LevelEditor").AddComponent<LevelEditor>();
+            _editor.transform.SetParent(transform, false);
+            _editor.Init(art, spawner != null ? spawner.hands : null);
+            _editor.Changed += RefreshCreatorInfo;
+            if (creator != null)
+            {
+                _editor.IsBlocked = creator.Covers;
+                creator.CompleteChosen += CompleteCustomLevel;
+                creator.CancelChosen += ShowMenu;
+                if (art != null) UiComic.Apply(creator, art.uiComic, art.uiComicSprite, art.uiShadowSprite);
+            }
+
             if (menu != null)
             {
                 menu.LevelChosen += StartLevel;
@@ -214,6 +252,10 @@ namespace MiniPlanes
                 menu.StartChosen += ConfirmStart;
                 menu.BackChosen += ShowMenu;
                 menu.PlaneChanged += ApplyPlaneSelection;
+                menu.CustomChosen += ShowCustomMenu;
+                menu.CustomPlayChosen += StartCustom;
+                menu.CustomEditChosen += OpenCreator;
+                menu.CreatorChosen += () => OpenCreator(-1);
             }
             if (wristMenu != null) wristMenu.Pressed += Pause;
             if (pausePanel != null)
@@ -305,23 +347,90 @@ namespace MiniPlanes
 
         // ---------------------------------------------------------------- flow control
 
+        /// <summary>Reads the saved custom levels again, for example after files were added or removed outside the game.</summary>
+        public void ReloadCustomLevels()
+        {
+            _customLevels = CustomLevelStore.LoadAll();
+        }
+
+        /// <summary>Back to the menu: the start page, or the Custom Paths page after custom levels and the Level Creator.</summary>
         public void ShowMenu()
         {
             OfferingRespawn = false;
-            Switch(MenuRoutine(false));
+            Switch(MenuRoutine(false, _menuToCustom));
+        }
+
+        /// <summary>The Custom Paths page: the saved custom levels and the Level Creator.</summary>
+        public void ShowCustomMenu()
+        {
+            _menuToCustom = true;
+            if (CurrentFlow == Flow.Menu && menu != null && menu.IsOpen) menu.ShowCustom(_customLevels, CustomPlaneSpeed);
+            else Switch(MenuRoutine(false, true));
         }
 
         public void StartLevel(int zeroBasedLevel)
         {
             if (zeroBasedLevel < 0 || zeroBasedLevel >= levels.Count) return;
             if (!Progression.IsLevelUnlocked(zeroBasedLevel)) return;
+            _menuToCustom = false;
             Switch(LevelRoutine(zeroBasedLevel));
         }
 
         public void StartInfinite()
         {
             if (!Progression.InfiniteUnlocked) return;
+            _menuToCustom = false;
             Switch(InfiniteRoutine());
+        }
+
+        /// <summary>Flies a saved custom level, by its place in <see cref="CustomLevels"/>.</summary>
+        public void StartCustom(int index)
+        {
+            if (index < 0 || index >= _customLevels.Count || !_customLevels[index].IsPlayable) return;
+            _menuToCustom = true;
+            Switch(CustomRoutine(index));
+        }
+
+        /// <summary>Opens the Level Creator: on a saved level, by its place in <see cref="CustomLevels"/>, or on a new one for -1.</summary>
+        public void OpenCreator(int index)
+        {
+            if (creator == null)
+            {
+                Debug.LogWarning("[MiniPlanes] The scene has no Level Creator panel. Run MiniPlanes > 0. Setup Everything to rebuild it.");
+                return;
+            }
+            if (index >= _customLevels.Count) return;
+            _menuToCustom = true;
+            Switch(CreatorRoutine(index));
+        }
+
+        /// <summary>
+        /// The Level Creator's Complete Level button: saves the path and feature counts, as a new level or
+        /// over the one being edited, then opens the Custom Paths page.
+        /// </summary>
+        public void CompleteCustomLevel()
+        {
+            if (CurrentFlow != Flow.Editor || _editor == null || _editor.PointCount < CustomLevelData.MinPoints) return;
+            var data = _editing != null ? _editing.Clone() : new CustomLevelData { name = CustomLevelStore.NextName(_customLevels) };
+            data.points = _editor.LocalPoints();
+            for (int i = 0; i < CustomFeatures.Count; i++)
+                data.SetCount((CustomFeature)i, creator != null ? creator.Counts[i] : 0);
+            if (creator != null)
+            {
+                data.fuel = creator.Fuel;
+                data.pathAlwaysOn = creator.PathAlwaysOn;
+            }
+            if (!CustomLevelStore.Save(data))
+            {
+                if (creator != null) creator.ShowHint("Couldn't save the level. Try again.");
+                Sfx.Play(SoundKind.LevelFailed);
+                return;
+            }
+            LastSavedLevel = data;
+            _customLevels = CustomLevelStore.LoadAll();
+            Sfx.Play(SoundKind.Reward, 0.7f);
+            _menuToCustom = true;
+            Switch(MenuRoutine(false, true));
         }
 
         /// <summary>
@@ -353,12 +462,13 @@ namespace MiniPlanes
         void Retry()
         {
             if (InInfinite) StartInfinite();
+            else if (InCustom) StartCustom(CustomIndex);
             else StartLevel(LevelIndex);
         }
 
         void Next()
         {
-            if (InInfinite || LevelIndex + 1 >= levels.Count) ShowMenu();
+            if (InInfinite || InCustom || LevelIndex + 1 >= levels.Count) ShowMenu();
             else StartLevel(LevelIndex + 1);
         }
 
@@ -414,6 +524,8 @@ namespace MiniPlanes
             if (spawner != null) spawner.End();
             if (revealer != null) revealer.End();
             if (_islands != null) _islands.Clear();
+            if (_editor != null) _editor.End();
+            if (creator != null) creator.Close();
             _plane.RemoveTurret();
         }
 
@@ -424,11 +536,12 @@ namespace MiniPlanes
             hud.SetCaption("");
         }
 
-        IEnumerator MenuRoutine(bool fadeIn)
+        IEnumerator MenuRoutine(bool fadeIn, bool custom = false)
         {
             if (splash != null && !fadeIn) splash.Close();
             CurrentFlow = Flow.Menu;
             InInfinite = false;
+            InCustom = false;
             SetGameplayInput(false);
             Clean();
             _plane.Hide();
@@ -444,7 +557,8 @@ namespace MiniPlanes
             yield return null;
             if (menu != null)
             {
-                menu.ShowStart(levels);
+                if (custom) menu.ShowCustom(_customLevels, CustomPlaneSpeed);
+                else menu.ShowStart(levels);
                 if (fadeIn) menu.FadeIn(menuFadeInSeconds);
             }
             if (!_titlePlayed)
@@ -458,6 +572,7 @@ namespace MiniPlanes
         {
             LevelIndex = index;
             InInfinite = false;
+            InCustom = false;
             Score = 0;
             CoinsThisRun = 0;
             _cfg = levels[index];
@@ -516,6 +631,7 @@ namespace MiniPlanes
         IEnumerator InfiniteRoutine()
         {
             InInfinite = true;
+            InCustom = false;
             Score = 0;
             Wave = 0;
             CoinsThisRun = 0;
@@ -579,10 +695,78 @@ namespace MiniPlanes
         }
 
         /// <summary>
-        /// One flight along one path: the intro page or a countdown, take-off, then flying until the path
-        /// ends or the lives run out. Each crash with lives left brings the plane back where it fell.
+        /// The Level Creator: the menu closes, the floating panel opens below the drawing space, and pinches
+        /// lay out the path around where the player is looking. It stays open until Complete Level or Cancel.
         /// </summary>
-        IEnumerator Flight(LevelConfig cfg, string levelLabel, string intro, bool keepShield, bool needsStart)
+        IEnumerator CreatorRoutine(int index)
+        {
+            CurrentFlow = Flow.Editor;
+            InInfinite = false;
+            InCustom = false;
+            SetGameplayInput(false);
+            Clean();
+            _plane.Hide();
+            HideHud();
+            if (menu != null) menu.Close();
+            yield return WaitForHead();
+
+            _editing = index >= 0 && index < _customLevels.Count ? _customLevels[index] : null;
+            Vector3 headPos = HeadReady() ? head.position : new Vector3(0f, 1.1f, 0f);
+            Vector3 headFwd = head != null ? head.forward : Vector3.forward;
+            _editor.Begin(_editing != null ? _editing.points : null, headPos, headFwd);
+            string heading = _editing != null ? "EDIT LEVEL  ·  " + (_editing.name ?? "").ToUpperInvariant() : "LEVEL CREATOR";
+            if (_editing != null) creator.Open(heading, _editing.CountsCopy(), _editing.fuel, _editing.pathAlwaysOn);
+            else creator.Open(heading, null);
+            RefreshCreatorInfo();
+        }
+
+        void RefreshCreatorInfo()
+        {
+            if (creator == null || _editor == null) return;
+            float speed = Mathf.Max(0.01f, CustomPlaneSpeed);
+            creator.SetPathInfo(_editor.PointCount, _editor.PathLength / speed);
+        }
+
+        /// <summary>A custom level: its intro page, one flight on its own path with its features, then the result.</summary>
+        IEnumerator CustomRoutine(int index)
+        {
+            var level = _customLevels[index];
+            CustomIndex = index;
+            InCustom = true;
+            InInfinite = false;
+            Score = 0;
+            CoinsThisRun = 0;
+            if (_customConfig != null) Destroy(_customConfig);
+            _customConfig = level.CreateConfig(customLevelBase);
+            string summary = level.FeatureSummary();
+            _customConfig.introCaption = (string.IsNullOrEmpty(summary) ? "Just you, your plane and your path." : summary) +
+                                         "\n" + level.RulesLine();
+            _cfg = _customConfig;
+            LivesTotal = Mathf.Max(1, _cfg.lives);
+            Lives = LivesTotal;
+
+            yield return Flight(_customConfig, "CUSTOM", "", false, true, level);
+
+            bool finished = _plane.CurrentState == MiniPlane.State.Finished;
+            LastFlightPassed = finished;
+            yield return new WaitForSeconds(resultDelaySeconds);
+            Clean();
+            HideHud();
+            SetGameplayInput(false);
+            CurrentFlow = Flow.Result;
+            string pathName = string.IsNullOrEmpty(level.name) ? "your path" : level.name;
+            string detail = finished ? "You flew " + pathName + " all the way to the end." : "Out of lives. Your plane " + _plane.LastCrashReason + ".";
+            if (menu != null)
+                menu.ShowResult(finished ? "LEVEL PASSED" : "TRY AGAIN", detail, "SCORE  " + Score, finished, false, "MENU");
+            Sfx.Play(finished ? SoundKind.LevelComplete : SoundKind.LevelFailed);
+        }
+
+        /// <summary>
+        /// One flight along one path: the intro page or a countdown, take-off, then flying until the path
+        /// ends or the lives run out. Each crash with lives left brings the plane back where it fell. A custom
+        /// level flies its own path and spawns its features by schedule.
+        /// </summary>
+        IEnumerator Flight(LevelConfig cfg, string levelLabel, string intro, bool keepShield, bool needsStart, CustomLevelData custom = null)
         {
             CurrentFlow = needsStart ? Flow.Intro : Flow.PreFlight;
             if (menu != null && !needsStart) menu.Close();
@@ -595,7 +779,7 @@ namespace MiniPlanes
             Vector3 headPos = HeadReady() ? head.position : new Vector3(0f, 1.1f, 0f);
             Vector3 headFwd = head != null ? head.forward : Vector3.forward;
 
-            var path = FlightPathGenerator.Build(cfg, headPos, headFwd, _seed);
+            var path = custom != null ? custom.BuildPath(headPos, headFwd) : FlightPathGenerator.Build(cfg, headPos, headFwd, _seed);
             _plane.PrepareAtStart(path, cfg, keepShield);
             if (revealer != null) revealer.Begin(path, cfg, _plane);
             if (_islands != null) _islands.Build(cfg, path, headPos, headFwd, _seed);
@@ -617,7 +801,11 @@ namespace MiniPlanes
             if (needsStart)
             {
                 _startPressed = false;
-                if (menu != null) menu.ShowIntro(cfg.levelNumber, cfg.levelName, cfg.introCaption, LivesTotal);
+                if (menu != null)
+                {
+                    if (custom != null) menu.ShowIntro("CUSTOM PATH", cfg.levelName, cfg.introCaption, LivesTotal);
+                    else menu.ShowIntro(cfg.levelNumber, cfg.levelName, cfg.introCaption, LivesTotal);
+                }
                 while (!_startPressed) yield return null;
                 if (menu != null) menu.Close();
                 if (hud != null) hud.SetVisible(true);
@@ -653,7 +841,11 @@ namespace MiniPlanes
                 _plane.Boost(def.perkBoostSeconds, def.perkBoostMultiplier);
                 if (hud != null) hud.SetCaption("BOOST!", 1.2f);
             }
-            if (spawner != null) spawner.Begin(cfg, _plane, headFwd, _seed);
+            if (spawner != null)
+            {
+                if (custom != null) spawner.BeginScheduled(cfg, _plane, headFwd, _seed, custom.CountsCopy(), _islands);
+                else spawner.Begin(cfg, _plane, headFwd, _seed);
+            }
 
             while (true)
             {
