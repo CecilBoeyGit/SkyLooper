@@ -35,8 +35,8 @@ namespace MiniPlanes
         public float maxBehindPanel = 0.08f;
         [Tooltip("The cursor dot appears this close in front of the panel.")]
         public float hoverDepth = 0.07f;
-        [Tooltip("Finger movement that turns a press on a list into a scroll, in canvas units.")]
-        public float dragThreshold = 18f;
+        [Tooltip("Finger movement that turns a press on a list into a scroll, in canvas units. A finger slides a little as it pokes into a floating panel, so too small a value swallows clicks.")]
+        public float dragThreshold = 36f;
 
         [Header("Cursor dots (optional)")]
         public Graphic[] cursors;
@@ -150,7 +150,8 @@ namespace MiniPlanes
             if (state.area != null)
             {
                 float dy = flat.y - state.startY;
-                if (!state.dragging && Mathf.Abs(dy) > dragThreshold)
+                // A list too short to scroll never drags, so a press on one of its rows always clicks.
+                if (!state.dragging && state.area.ScrollMax > 0.5f && Mathf.Abs(dy) > dragThreshold)
                 {
                     state.dragging = true;
                     if (state.target != null) state.target.Pressed = false;

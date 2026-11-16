@@ -1632,7 +1632,7 @@ MonoBehaviour:
   releaseDepth: 0.028
   maxBehindPanel: 0.08
   hoverDepth: 0.07
-  dragThreshold: 18
+  dragThreshold: 36
   cursors:
   - {fileID: 4324986748064109909}
   - {fileID: 8565288587429530332}
