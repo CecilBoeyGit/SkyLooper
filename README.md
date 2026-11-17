@@ -133,13 +133,15 @@ tutorial level pays a coin bonus the first time you pass it.
 
 ## Install
 
-SkyLooper isn't on the Meta Horizon Store. You install it yourself ("sideloading").
+Download and play SkyLooper from its **Meta release channel**:
 
-1. Turn on **Developer Mode** for your headset in the Meta Horizon phone app.
-2. Download `SkyLooper.apk` from the [Releases](https://github.com/CecilBoeyGit/SkyLooper/releases) page.
-3. Install it with [SideQuest](https://sidequestvr.com/), or plug in the headset and run
-   `adb install -r SkyLooper.apk`.
-4. On the headset, find **SkyLooper** in your app library under **Unknown Sources**.
+<p align="center"><b><a href="https://www.meta.com/s/6QLsxPH0Z">Get SkyLooper on Meta Quest →</a></b></p>
+
+1. Open [the link](https://www.meta.com/s/6QLsxPH0Z) on your phone or computer and sign in with the Meta
+   account your headset uses.
+2. Accept the invitation to join the release channel.
+3. On the headset, install **SkyLooper** from your app library or the Store, like any other app.
+   Updates arrive automatically.
 
 **You'll need:**
 - A Meta Quest 3 or 3S with **hand tracking** turned on. Controllers aren't used.
