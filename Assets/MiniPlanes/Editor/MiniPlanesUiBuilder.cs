@@ -328,7 +328,7 @@ namespace MiniPlanes.Editor
         {
             var page = Page(canvas, "StartPage");
             menu.startPage = page.gameObject;
-            Txt(page, "Title", "MINIPLANES", 60, _heading, Ink, TextAnchor.MiddleCenter, At(0f, 18f, MenuW, 84f));
+            Txt(page, "Title", "SKYLOOPER", 60, _heading, Ink, TextAnchor.MiddleCenter, At(0f, 18f, MenuW, 84f));
             CoinSlot(page, MenuW - 170f, 32f, out menu.startCoins);
 
             Txt(page, "TutorialHead", "TUTORIAL", 28, _heading, Muted, TextAnchor.MiddleLeft, At(40f, 108f, 300f, 40f));
