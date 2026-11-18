@@ -203,6 +203,22 @@ Headless (run one at a time; the project can only be open once):
 Unity.exe -batchmode -nographics -buildTarget Android -projectPath D:/Unity/MiniPlanes -executeMethod MiniPlanes.Editor.MiniPlanesBootstrap.SetupAndBuild -quit -logFile build.log
 ```
 
+### Making another game from this project
+
+SkyLooper's Android package is `com.miniplanes.quest`, fixed by its Meta store listing. A headset holds one app
+per package, so a different game built with the same package **replaces SkyLooper**: the SkyLooper tile in the
+library then opens the other game. If you copy this project to make your own game:
+
+1. In `Edit > Project Settings > Player`, set your own **Company Name**, **Product Name** and, under Android,
+   **Package Name** (for example `com.yourname.yourgame`).
+2. Run `MiniPlanes > 0. Setup Everything`. Setup only fills these in while they are blank or Unity's defaults,
+   so it keeps yours.
+3. Sign with your own keystore, not one copied from someone else.
+
+Projects copied before this change force `com.miniplanes.quest` on every setup: change the line
+`PlayerSettings.SetApplicationIdentifier(android, "com.miniplanes.quest");` in
+`Assets/MiniPlanes/Editor/MiniPlanesProjectSetup.cs` to your package as well.
+
 ## Automated checks
 
 `MiniPlanes > 4. Run Autopilot Checks` plays the real scene with simulated hands at a fixed timestep and

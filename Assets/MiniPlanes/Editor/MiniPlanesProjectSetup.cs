@@ -35,15 +35,30 @@ namespace MiniPlanes.Editor
             Debug.Log("[MiniPlanes] Project settings configured.");
         }
 
+        /// <summary>SkyLooper's Android package, fixed by its Meta store listing. Other games need their own.</summary>
+        public const string SkyLooperPackage = "com.miniplanes.quest";
+
+        /// <summary>Blank, or one of the placeholders Unity's templates start with.</summary>
+        static bool IsUnityDefault(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return true;
+            return value == "DefaultCompany" || value.StartsWith("com.DefaultCompany") || value.StartsWith("com.Unity-Technologies") ||
+                   value == "New Unity Project" || value.StartsWith("My project");
+        }
+
         static void ConfigurePlayerSettings()
         {
-            PlayerSettings.companyName = "MiniPlanes";
-            PlayerSettings.productName = "SkyLooper";
+            // The app's identity is only filled in when it is still Unity's default. A copy of this project made
+            // into another game sets its own names and package in Player Settings and keeps them: two apps with
+            // the same Android package replace each other on the headset.
+            if (IsUnityDefault(PlayerSettings.companyName)) PlayerSettings.companyName = "MiniPlanes";
+            if (IsUnityDefault(PlayerSettings.productName)) PlayerSettings.productName = "SkyLooper";
             PlayerSettings.colorSpace = ColorSpace.Linear;
             PlayerSettings.defaultInterfaceOrientation = UIOrientation.LandscapeLeft;
 
             var android = NamedBuildTarget.Android;
-            PlayerSettings.SetApplicationIdentifier(android, "com.miniplanes.quest");
+            if (IsUnityDefault(PlayerSettings.GetApplicationIdentifier(android)))
+                PlayerSettings.SetApplicationIdentifier(android, SkyLooperPackage);
             PlayerSettings.SetScriptingBackend(android, ScriptingImplementation.IL2CPP);
             PlayerSettings.SetIl2CppCodeGeneration(android, Il2CppCodeGeneration.OptimizeSize);
             PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
